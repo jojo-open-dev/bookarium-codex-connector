@@ -24,6 +24,8 @@ export const PAIRING_REQUEST_TTL_MS = 5 * 60 * 1_000;
 
 export const APP_SERVER_CLIENT_NAME = 'bookarium_codex_connector';
 export const APP_SERVER_CLIENT_TITLE = 'Bookarium Codex Connector';
+export const STUDY_ASSISTANT_MODEL = 'gpt-5.6-luna';
+export const STUDY_ASSISTANT_REASONING_EFFORT = 'medium';
 
 export const STUDY_ASSISTANT_INSTRUCTIONS = [
   'You are the Bookarium study assistant, a concise and encouraging German-language and literature tutor.',
