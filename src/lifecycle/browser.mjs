@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { win32 as windowsPath } from 'node:path';
 import { requireAllowedOrigin } from '../bridge/origin-policy.mjs';
 import { isValidPairingToken } from '../bridge/pairing.mjs';
 
@@ -14,17 +15,23 @@ export const createPairingUrl = (allowedOrigin, pairingCode) => {
 };
 
 export const openBrowser = (url, {
+  environment = process.env,
   platform = process.platform,
   spawnProcess = spawn,
 } = {}) => {
   const target = new URL(url);
   if (!['http:', 'https:'].includes(target.protocol)) throw new Error('Invalid browser pairing URL.');
   if (platform !== 'win32') throw new Error(`Opening browser pairing is not implemented for ${platform}.`);
+  const windowsRoot = environment.SystemRoot ?? environment.WINDIR;
+  if (typeof windowsRoot !== 'string' || !windowsPath.isAbsolute(windowsRoot)) {
+    throw new Error('Windows system directory is unavailable.');
+  }
+  const urlHandler = windowsPath.join(windowsPath.resolve(windowsRoot), 'System32', 'rundll32.exe');
 
   return new Promise((resolve, reject) => {
     let child;
     try {
-      child = spawnProcess('explorer.exe', [target.href], {
+      child = spawnProcess(urlHandler, ['url.dll,FileProtocolHandler', target.href], {
         detached: true,
         shell: false,
         stdio: 'ignore',

@@ -87,6 +87,7 @@ test('installs, reports, repairs, and uninstalls only an isolated owned tree', a
   assert.doesNotMatch(output.data, /[A-Za-z0-9_-]{43}/u);
   assert.match(openedUrl, /^https:\/\/bienemaja\.app\/#bookarium-codex-pairing=/u);
   assert.equal(new URL(openedUrl).hash.includes(pairingCode), true);
+  assert.match(output.data, /Start-Process 'bookarium-codex:\/\/connect'/u);
 
   output.data = '';
   assert.equal(await statusCommand({

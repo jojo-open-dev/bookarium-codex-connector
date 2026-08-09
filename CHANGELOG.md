@@ -25,6 +25,8 @@ All notable changes to this project will be documented here.
 
 - Make on-demand Windows activation the default and automatic sign-in startup an explicit `install --startup` option.
 - Persist a verified shell-free Codex launch command during install and repair so later CLI and URI starts do not depend on the caller's `PATH`.
+- Open the one-time pairing page through Windows' URL handler instead of `explorer.exe`, which could leave pairing pending without navigating the default browser.
+- Document the normal returning-user flow as PowerShell activation followed by opening Bookarium.
 
 ### Security
 
