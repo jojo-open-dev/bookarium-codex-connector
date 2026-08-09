@@ -1,0 +1,20 @@
+flowchart LR
+    P[Public npm users]
+    G[Release gate<br/>publication blocked]
+    B[Existing local paired browser]
+    C[Current connector controls]
+    A[Codex App Server]
+    T[Built-in tool may begin]
+    F[(Other user-readable files)]
+
+    P -->|install attempt| G
+    G -->|no public release| X[No new public exposure]
+    B --> C --> A --> T --> F
+
+    subgraph Residual[Existing local risk remains]
+        B
+        C
+        A
+        T
+        F
+    end

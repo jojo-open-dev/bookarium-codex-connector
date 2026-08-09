@@ -1,0 +1,20 @@
+flowchart LR
+    B[Paired Bookarium browser<br/>untrusted study text]
+    C[Connector adapter<br/>protocol/version gate]
+    A[Verified Codex App Server]
+    S[Tool sandbox<br/>read-only + no network]
+    W[(Empty connector workspace)]
+    F[(Other user files)]
+    K[App Server auth channel<br/>owned by official Codex]
+
+    B --> C
+    C -->|restricted readableRoots<br/>or fail closed| A
+    A --> S
+    S -->|allowed read| W
+    S -. OS denial .-> F
+    A --> K
+
+    subgraph ToolBoundary[Preventive tool read boundary]
+        S
+        W
+    end
