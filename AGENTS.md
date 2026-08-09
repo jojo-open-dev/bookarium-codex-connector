@@ -1,6 +1,6 @@
 # Repository guidance
 
-Read `PROJECT_HANDOFF.md` and `THREAT_MODEL.md` before changing runtime, lifecycle, pairing, or release code.
+Read `THREAT_MODEL.md` before changing runtime, lifecycle, pairing, or release code.
 
 Security boundaries must fail closed. Never read Codex authentication files, expose App Server directly to the browser, bind outside `127.0.0.1`, log secrets or full prompts, weaken the read-only/no-network policy, or publish without explicit owner approval.
 
