@@ -30,6 +30,7 @@ import { initializePairingState } from './pairing-state.mjs';
 
 const OWNERSHIP_PRODUCT = 'bookarium-codex-connector';
 const STATE_SCHEMA_VERSION = 1;
+export const LIFECYCLE_SCHEMA_VERSION = 2;
 const CONFIG_SCHEMA_VERSION = 2;
 const PACKAGE_FILE_ENTRIES = [
   'bin',
@@ -238,7 +239,9 @@ export const readLifecycle = async (paths) => {
   await assertNoLinksInPath(paths.dataRoot, paths.lifecycleFile);
   const lifecycle = await readJsonFile(paths.lifecycleFile);
   const activation = lifecycle.activation ?? null;
-  if (lifecycle.schemaVersion !== STATE_SCHEMA_VERSION
+  const codexArgsPrefix = lifecycle.codexArgsPrefix ?? [];
+  const legacyLifecycle = lifecycle.schemaVersion === STATE_SCHEMA_VERSION;
+  if ((!legacyLifecycle && lifecycle.schemaVersion !== LIFECYCLE_SCHEMA_VERSION)
     || lifecycle.installationId !== ownership.installationId
     || lifecycle.version !== paths.version
     || typeof lifecycle.nodePath !== 'string'
@@ -246,6 +249,10 @@ export const readLifecycle = async (paths) => {
     || typeof lifecycle.startupEnabled !== 'boolean'
     || typeof lifecycle.codexCommand !== 'string'
     || !lifecycle.codexCommand
+    || (!legacyLifecycle && !isAbsolute(lifecycle.codexCommand))
+    || !Array.isArray(codexArgsPrefix)
+    || codexArgsPrefix.length > 1
+    || codexArgsPrefix.some((argument) => typeof argument !== 'string' || !isAbsolute(argument))
     || (activation !== null && (
       typeof activation !== 'object'
       || Array.isArray(activation)
@@ -258,15 +265,22 @@ export const readLifecycle = async (paths) => {
     ))) {
     throw new Error('Connector lifecycle metadata is invalid.');
   }
-  return { ...lifecycle, activation };
+  return { ...lifecycle, activation, codexArgsPrefix };
 };
 
 export const installPackage = async (paths, {
   allowedOrigin = DEFAULT_BOOKARIUM_ORIGIN,
-  codexCommand = 'codex',
+  codexArgsPrefix = [],
+  codexCommand = process.execPath,
   nodePath = process.execPath,
   startupEnabled = false,
 } = {}) => {
+  if (!isAbsolute(codexCommand)
+    || !Array.isArray(codexArgsPrefix)
+    || codexArgsPrefix.length > 1
+    || codexArgsPrefix.some((argument) => typeof argument !== 'string' || !isAbsolute(argument))) {
+    throw new Error('Codex launch metadata is invalid.');
+  }
   const ownership = await ensureOwnedInstallationRoot(paths);
   await ensureDirectory(paths.dataRoot, paths.versionsRoot);
 
@@ -300,10 +314,11 @@ export const installPackage = async (paths, {
   });
   const lifecycle = {
     activation: previousLifecycle?.activation ?? null,
-    codexCommand,
+    codexArgsPrefix: codexArgsPrefix.map((argument) => resolve(argument)),
+    codexCommand: resolve(codexCommand),
     installationId: ownership.installationId,
     nodePath: resolve(nodePath),
-    schemaVersion: STATE_SCHEMA_VERSION,
+    schemaVersion: LIFECYCLE_SCHEMA_VERSION,
     startup: previousLifecycle?.startup ?? null,
     startupEnabled,
     version: paths.version,
