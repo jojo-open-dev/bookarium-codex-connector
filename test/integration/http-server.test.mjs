@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createBridgeServer } from '../../src/bridge/http-server.mjs';
 import { ConnectorBusyError } from '../../src/app-server/client.mjs';
-import { MAX_BODY_BYTES, PROTOCOL_VERSION } from '../../src/constants.mjs';
+import {
+  MAX_ACTIVE_HTTP_REQUESTS,
+  MAX_BODY_BYTES,
+  MAX_HTTP_CONNECTIONS,
+  PROTOCOL_VERSION,
+} from '../../src/constants.mjs';
 
 const origin = 'http://localhost:5173';
 const token = 'A'.repeat(43);
@@ -19,6 +24,18 @@ const startServer = async (testContext, client = {
   }));
   return `http://127.0.0.1:${server.address().port}`;
 };
+
+test('caps concurrent sockets at the server boundary', () => {
+  const server = createBridgeServer({
+    allowedOrigin: origin,
+    client: {
+      ask: async (prompt) => prompt,
+      readAccount: async () => ({ type: 'chatgpt' }),
+    },
+    token,
+  });
+  assert.equal(server.maxConnections, MAX_HTTP_CONNECTIONS);
+});
 
 test('exchanges an origin-bound pairing request once and authorizes only the issued token', async (testContext) => {
   const pairingCode = 'P'.repeat(43);
@@ -226,4 +243,37 @@ test('refuses non-ChatGPT authentication and concurrent tutor turns', async (tes
   });
   assert.equal(apiKey.status, 409);
   assert.match((await apiKey.json()).error, /signed in with ChatGPT/u);
+});
+
+test('bounds protected HTTP work before account App Server calls fan out', async (testContext) => {
+  let accountReads = 0;
+  let releaseAccountReads;
+  const accountReadsReleased = new Promise((resolve) => { releaseAccountReads = resolve; });
+  const baseUrl = await startServer(testContext, {
+    ask: async (prompt) => prompt,
+    readAccount: async () => {
+      accountReads += 1;
+      await accountReadsReleased;
+      return { type: 'chatgpt' };
+    },
+  });
+  const request = () => fetch(`${baseUrl}/v1/account`, { headers: authorizedHeaders });
+  const admitted = Array.from({ length: MAX_ACTIVE_HTTP_REQUESTS }, () => request());
+  while (accountReads < MAX_ACTIVE_HTTP_REQUESTS) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  const overflowPromise = request();
+  let overflow;
+  try {
+    overflow = await Promise.race([
+      overflowPromise,
+      new Promise((resolve) => setTimeout(() => resolve(null), 200)),
+    ]);
+    assert.equal(overflow?.status, 429);
+    assert.equal(accountReads, MAX_ACTIVE_HTTP_REQUESTS);
+  } finally {
+    releaseAccountReads();
+    await Promise.allSettled([...admitted, overflowPromise]);
+  }
 });

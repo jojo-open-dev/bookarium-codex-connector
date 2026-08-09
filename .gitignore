@@ -3,3 +3,4 @@ coverage/
 *.log
 *.tgz
 .bookarium-codex/
+release-candidate/

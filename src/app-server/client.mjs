@@ -8,6 +8,9 @@ import {
   APP_SERVER_REQUEST_TIMEOUT_MS,
   APP_SERVER_TURN_TIMEOUT_MS,
   MAX_APP_SERVER_FRAME_BYTES,
+  MAX_APP_SERVER_PENDING_REQUESTS,
+  MAX_APP_SERVER_TURN_EVENTS,
+  MAX_APP_SERVER_TURN_ITEMS,
   MAX_PROMPT_LENGTH,
   MAX_RESPONSE_BYTES,
   PACKAGE_VERSION,
@@ -20,16 +23,12 @@ import {
   toSafeAccount,
 } from './protocol.mjs';
 
-const UNSAFE_ITEM_TYPES = new Set([
-  'collabAgentToolCall',
-  'commandExecution',
-  'dynamicToolCall',
-  'fileChange',
-  'imageGeneration',
-  'imageView',
-  'mcpToolCall',
-  'subAgentActivity',
-  'webSearch',
+const PASSIVE_ITEM_TYPES = new Set([
+  'agentMessage',
+  'contextCompaction',
+  'plan',
+  'reasoning',
+  'userMessage',
 ]);
 
 export class ConnectorBusyError extends Error {
@@ -48,13 +47,39 @@ export class UnsafeToolActivityError extends Error {
 
 const defaultWorkspace = join(tmpdir(), 'bookarium-codex-connector', 'workspace');
 
+const waitForChildExit = (child, timeoutMs) => {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+  return Promise.race([
+    new Promise((resolve) => {
+      child.once('exit', () => resolve(true));
+    }),
+    new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), timeoutMs);
+      timer.unref?.();
+    }),
+  ]);
+};
+
+const terminateChild = async (child) => {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  child.kill();
+  if (await waitForChildExit(child, 2_000)) return;
+  if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  if (!await waitForChildExit(child, 2_000)) {
+    throw new Error('Codex App Server could not be terminated safely.');
+  }
+};
+
 export class CodexAppServerClient {
   constructor({
     appServerArgs = ['app-server', '--listen', 'stdio://', '--config', 'mcp_servers={}'],
     command = 'codex',
     environment = process.env,
     maximumFrameBytes = MAX_APP_SERVER_FRAME_BYTES,
+    maximumItemCount = MAX_APP_SERVER_TURN_ITEMS,
+    maximumPendingRequests = MAX_APP_SERVER_PENDING_REQUESTS,
     maximumResponseBytes = MAX_RESPONSE_BYTES,
+    maximumTurnEvents = MAX_APP_SERVER_TURN_EVENTS,
     onDiagnostic = () => {},
     requestTimeoutMs = APP_SERVER_REQUEST_TIMEOUT_MS,
     spawnProcess = spawn,
@@ -65,7 +90,10 @@ export class CodexAppServerClient {
     this.command = command;
     this.environment = environment;
     this.maximumFrameBytes = maximumFrameBytes;
+    this.maximumItemCount = maximumItemCount;
+    this.maximumPendingRequests = maximumPendingRequests;
     this.maximumResponseBytes = maximumResponseBytes;
+    this.maximumTurnEvents = maximumTurnEvents;
     this.onDiagnostic = onDiagnostic;
     this.requestTimeoutMs = requestTimeoutMs;
     this.spawnProcess = spawnProcess;
@@ -80,9 +108,13 @@ export class CodexAppServerClient {
     this.ready = false;
     this.startPromise = null;
     this.stdoutBuffer = Buffer.alloc(0);
+    this.terminationError = null;
+    this.terminationPromise = null;
   }
 
   async start() {
+    if (this.terminationPromise) await this.terminationPromise;
+    if (this.terminationError) throw this.terminationError;
     if (this.ready) return;
     if (this.startPromise) return this.startPromise;
 
@@ -136,6 +168,9 @@ export class CodexAppServerClient {
     }
     if (typeof method !== 'string' || !method || !params || typeof params !== 'object') {
       return Promise.reject(new AppServerProtocolError('Invalid App Server request.'));
+    }
+    if (this.pendingRequests.size >= this.maximumPendingRequests) {
+      return Promise.reject(new ConnectorBusyError());
     }
 
     const id = this.nextRequestId;
@@ -197,12 +232,13 @@ export class CodexAppServerClient {
         completionReject = reject;
       });
       const timer = setTimeout(() => {
-        this.#settleActive(new Error('Codex took too long to answer.'), true);
-        this.#interruptActiveTurn();
+        this.#abortActive(new Error('Codex took too long to answer.'));
       }, this.turnTimeoutMs);
       timer.unref?.();
       this.activeTurn = {
+        answerBytes: 0,
         answerByItemId: new Map(),
+        eventCount: 0,
         finalAnswer: '',
         reject: completionReject,
         resolve: completionResolve,
@@ -210,23 +246,32 @@ export class CodexAppServerClient {
         threadId,
         timer,
         turnId: null,
+        requiresRestart: false,
       };
 
       try {
         const turnResult = await this.request('turn/start', {
-          approvalPolicy: 'never',
-          effort: 'low',
-          input: [{ type: 'text', text: normalizedPrompt }],
-          personality: 'friendly',
-          sandboxPolicy: { type: 'readOnly', networkAccess: false },
+        approvalPolicy: 'never',
+        cwd: this.workspace,
+        effort: 'low',
+        input: [{ type: 'text', text: normalizedPrompt }],
+        personality: 'friendly',
+        sandboxPolicy: {
+          networkAccess: false,
+          type: 'readOnly',
+        },
           threadId,
         });
         const turnId = turnResult?.turn?.id;
         if (typeof turnId !== 'string' || !turnId) {
           throw new AppServerProtocolError('Codex did not start a tutor turn.');
         }
+        if (this.activeTurn?.turnId && this.activeTurn.turnId !== turnId) {
+          throw new AppServerProtocolError('Codex returned conflicting tutor turn identifiers.');
+        }
         if (this.activeTurn) this.activeTurn.turnId = turnId;
       } catch (error) {
+        if (this.activeTurn) this.activeTurn.requiresRestart = true;
         this.#settleActive(error, true);
         await completion.catch(() => {});
         throw error;
@@ -234,7 +279,13 @@ export class CodexAppServerClient {
 
       return await completion;
     } finally {
-      if (this.activeTurn?.timer) clearTimeout(this.activeTurn.timer);
+      const active = this.activeTurn;
+      if (active?.timer) clearTimeout(active.timer);
+      if (active?.requiresRestart) {
+        await this.#terminate(new Error('Codex App Server turn was terminated safely.'));
+      } else if (this.terminationPromise) {
+        await this.terminationPromise;
+      }
       this.activeTurn = null;
       this.busy = false;
       if (threadId && this.process?.stdin?.writable) {
@@ -244,30 +295,7 @@ export class CodexAppServerClient {
   }
 
   async stop() {
-    const child = this.process;
-    this.process = null;
-    this.ready = false;
-    this.startPromise = null;
-    this.stdoutBuffer = Buffer.alloc(0);
-    this.#failPending(new Error('Codex App Server stopped.'));
-    if (!child || child.exitCode !== null || child.signalCode !== null) return;
-
-    const exited = new Promise((resolve) => {
-      child.once('error', resolve);
-      child.once('exit', resolve);
-    });
-    child.kill();
-    const graceful = await Promise.race([
-      exited.then(() => true),
-      new Promise((resolve) => {
-        const timer = setTimeout(() => resolve(false), 2_000);
-        timer.unref?.();
-      }),
-    ]);
-    if (!graceful && child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGKILL');
-      await exited;
-    }
+    await this.#terminate(new Error('Codex App Server stopped.'));
   }
 
   #send(message) {
@@ -324,8 +352,7 @@ export class CodexAppServerClient {
         error: { code: -32_601, message: 'Bookarium does not expose host actions.' },
       });
       if (this.activeTurn) {
-        this.#settleActive(new UnsafeToolActivityError(), true);
-        this.#interruptActiveTurn();
+        this.#abortActive(new UnsafeToolActivityError());
       }
       return;
     }
@@ -333,25 +360,41 @@ export class CodexAppServerClient {
     const active = this.activeTurn;
     if (!active || active.settled || message.params?.threadId !== active.threadId) return;
     const messageTurnId = message.params?.turnId ?? message.params?.turn?.id ?? null;
+    if (!active.turnId && typeof messageTurnId === 'string' && messageTurnId) {
+      active.turnId = messageTurnId;
+    }
     if (active.turnId && messageTurnId && messageTurnId !== active.turnId) return;
+    active.eventCount += 1;
+    if (active.eventCount > this.maximumTurnEvents) {
+      this.#abortActive(new Error('Codex answer exceeded the connector event limit.'));
+      return;
+    }
 
     const item = message.params?.item;
-    if ((message.method === 'item/started' || message.method === 'item/completed')
-      && UNSAFE_ITEM_TYPES.has(item?.type)) {
-      this.#settleActive(new UnsafeToolActivityError(), true);
-      this.#interruptActiveTurn();
-      return;
+    if (message.method === 'item/started' || message.method === 'item/completed') {
+      if (typeof item?.type !== 'string' || !PASSIVE_ITEM_TYPES.has(item.type)) {
+        this.#abortActive(new UnsafeToolActivityError());
+        return;
+      }
     }
 
     if (message.method === 'item/agentMessage/delta') {
       const itemId = typeof message.params?.itemId === 'string' ? message.params.itemId : '_agent';
       const delta = typeof message.params?.delta === 'string' ? message.params.delta : '';
-      const combined = `${active.answerByItemId.get(itemId) ?? ''}${delta}`;
-      if (Buffer.byteLength(combined) > this.maximumResponseBytes) {
-        this.#settleActive(new Error('Codex answer exceeded the connector response limit.'), true);
-        this.#interruptActiveTurn();
+      const previous = active.answerByItemId.get(itemId) ?? '';
+      if (!active.answerByItemId.has(itemId)
+        && active.answerByItemId.size >= this.maximumItemCount) {
+        this.#abortActive(new Error('Codex answer exceeded the connector item limit.'));
+        return;
+      }
+      const combined = `${previous}${delta}`;
+      const combinedBytes = Buffer.byteLength(combined);
+      const aggregateBytes = active.answerBytes - Buffer.byteLength(previous) + combinedBytes;
+      if (combinedBytes > this.maximumResponseBytes || aggregateBytes > this.maximumResponseBytes) {
+        this.#abortActive(new Error('Codex answer exceeded the connector response limit.'));
       } else {
         active.answerByItemId.set(itemId, combined);
+        active.answerBytes = aggregateBytes;
       }
       return;
     }
@@ -359,11 +402,14 @@ export class CodexAppServerClient {
     if (message.method === 'item/completed' && item?.type === 'agentMessage') {
       const text = typeof item.text === 'string' ? item.text : '';
       if (Buffer.byteLength(text) > this.maximumResponseBytes) {
-        this.#settleActive(new Error('Codex answer exceeded the connector response limit.'), true);
-        this.#interruptActiveTurn();
+        this.#abortActive(new Error('Codex answer exceeded the connector response limit.'));
         return;
       }
-      if (item.phase !== 'commentary') active.finalAnswer = text;
+      if (item.phase !== 'commentary') {
+        active.answerByItemId.clear();
+        active.answerBytes = Buffer.byteLength(text);
+        active.finalAnswer = text;
+      }
       return;
     }
 
@@ -375,8 +421,9 @@ export class CodexAppServerClient {
       return;
     }
 
-    const streamedAnswers = [...active.answerByItemId.values()];
-    const answer = (active.finalAnswer || streamedAnswers.at(-1) || '').trim();
+    let streamedAnswer = '';
+    for (const value of active.answerByItemId.values()) streamedAnswer = value;
+    const answer = (active.finalAnswer || streamedAnswer).trim();
     if (!answer) {
       this.#settleActive(new Error('Codex returned an empty answer.'), true);
       return;
@@ -393,6 +440,12 @@ export class CodexAppServerClient {
     else active.resolve(value);
   }
 
+  #abortActive(error) {
+    if (this.activeTurn) this.activeTurn.requiresRestart = true;
+    this.#settleActive(error, true);
+    this.#interruptActiveTurn();
+  }
+
   #interruptActiveTurn() {
     const { threadId, turnId } = this.activeTurn ?? {};
     if (!threadId || !turnId || !this.process?.stdin?.writable) return;
@@ -401,11 +454,31 @@ export class CodexAppServerClient {
 
   #fatalProtocol() {
     this.onDiagnostic('invalid-app-server-frame');
-    this.#fail(new AppServerProtocolError('Codex App Server protocol failed closed.'));
+    const stopping = this.#terminate(
+      new AppServerProtocolError('Codex App Server protocol failed closed.'),
+    );
+    void stopping.catch(() => {});
+  }
+
+  #terminate(error) {
+    this.#failPending(error);
+    if (this.terminationPromise) return this.terminationPromise;
     const child = this.process;
     this.process = null;
     this.ready = false;
-    if (child && child.exitCode === null && child.signalCode === null) child.kill();
+    this.startPromise = null;
+    this.stdoutBuffer = Buffer.alloc(0);
+    if (!child || child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+
+    const stopping = terminateChild(child).catch((terminationError) => {
+      this.terminationError = terminationError;
+      throw terminationError;
+    });
+    const tracked = stopping.finally(() => {
+      if (this.terminationPromise === tracked) this.terminationPromise = null;
+    });
+    this.terminationPromise = tracked;
+    return tracked;
   }
 
   #fail(error) {

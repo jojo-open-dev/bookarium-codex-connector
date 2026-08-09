@@ -1,0 +1,6 @@
+.github/workflows/ @jojobeee
+package.json @jojobeee
+package-lock.json @jojobeee
+scripts/ @jojobeee
+SECURITY.md @jojobeee
+THREAT_MODEL.md @jojobeee

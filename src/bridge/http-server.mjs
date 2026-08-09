@@ -2,7 +2,9 @@ import { createServer } from 'node:http';
 import {
   DEFAULT_BRIDGE_HOST,
   HTTP_REQUEST_TIMEOUT_MS,
+  MAX_ACTIVE_HTTP_REQUESTS,
   MAX_BODY_BYTES,
+  MAX_HTTP_CONNECTIONS,
   MAX_PROMPT_LENGTH,
   MAX_RESPONSE_BYTES,
   PROTOCOL_VERSION,
@@ -147,7 +149,13 @@ export const createBridgeServer = ({ allowedOrigin, client, pairing, token }) =>
     throw new Error('A Codex App Server client is required.');
   }
 
+  let activeRequests = 0;
   const server = createServer(async (request, response) => {
+    if (activeRequests >= MAX_ACTIVE_HTTP_REQUESTS) {
+      writeJson(response, 429, { error: 'Too many connector requests are already active.' });
+      return;
+    }
+    activeRequests += 1;
     let responseOrigin = null;
     try {
       if (typeof request.url !== 'string' || !request.url.startsWith('/')) {
@@ -260,11 +268,14 @@ export const createBridgeServer = ({ allowedOrigin, client, pairing, token }) =>
         responseOrigin,
         allow ? { Allow: allow } : {},
       );
+    } finally {
+      activeRequests -= 1;
     }
   });
 
   server.headersTimeout = 5_000;
   server.keepAliveTimeout = 5_000;
+  server.maxConnections = MAX_HTTP_CONNECTIONS;
   server.maxHeadersCount = 32;
   server.maxRequestsPerSocket = 100;
   server.requestTimeout = HTTP_REQUEST_TIMEOUT_MS;

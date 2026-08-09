@@ -10,6 +10,9 @@ const audit = (value) => {
 };
 
 const send = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
+const sendBatch = (values) => process.stdout.write(
+  values.map((value) => `${JSON.stringify(value)}\n`).join(''),
+);
 
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   let message;
@@ -27,6 +30,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   }
   if (message.method === 'initialized') return;
   if (message.method === 'account/read') {
+    if (process.env.FAKE_APP_SERVER_STALLED_ACCOUNT === '1') return;
     send({
       id: message.id,
       result: {
@@ -60,7 +64,49 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     const itemId = `agent-${turnNumber}`;
     const prompt = message.params.input?.[0]?.text ?? '';
     const answer = `Tutor: ${prompt}`;
-    send({ id: message.id, result: { turn: { id: turnId, items: [], status: 'inProgress' } } });
+    const started = { id: message.id, result: { turn: { id: turnId, items: [], status: 'inProgress' } } };
+
+    if (process.env.FAKE_APP_SERVER_COALESCED_UNSAFE_TOOL === '1') {
+      sendBatch([
+        started,
+        {
+          method: 'item/started',
+          params: {
+            item: { command: 'forbidden', id: itemId, status: 'inProgress', type: 'commandExecution' },
+            threadId,
+            turnId,
+          },
+        },
+      ]);
+      return;
+    }
+    send(started);
+
+    if (process.env.FAKE_APP_SERVER_MALFORMED_FRAME === '1') {
+      process.stdout.write('{not-json}\n');
+      return;
+    }
+    if (process.env.FAKE_APP_SERVER_UNKNOWN_ITEM === '1') {
+      send({
+        method: 'item/started',
+        params: {
+          item: { id: itemId, status: 'inProgress', type: 'futureToolType' },
+          threadId,
+          turnId,
+        },
+      });
+      return;
+    }
+    if (process.env.FAKE_APP_SERVER_MANY_ITEMS === '1') {
+      for (let index = 0; index < 3; index += 1) {
+        send({
+          method: 'item/agentMessage/delta',
+          params: { delta: 'xxxx', itemId: `agent-${turnNumber}-${index}`, threadId, turnId },
+        });
+      }
+      return;
+    }
+    if (process.env.FAKE_APP_SERVER_STALLED_TURN === '1') return;
 
     if (process.env.FAKE_APP_SERVER_HOST_REQUEST === '1') {
       send({
