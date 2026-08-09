@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -23,6 +24,7 @@ test('installs, starts, inspects, stops, and uninstalls with the real local Code
   const environment = {
     ...process.env,
     APPDATA: join(root, 'Roaming'),
+    BOOKARIUM_ACTIVATION_TEST_ID: randomBytes(6).toString('hex'),
     LOCALAPPDATA: join(root, 'Local'),
   };
   await mkdir(environment.APPDATA, { recursive: true });

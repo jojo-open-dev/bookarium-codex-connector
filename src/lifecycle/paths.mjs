@@ -1,6 +1,6 @@
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PACKAGE_VERSION } from '../constants.mjs';
+import { PACKAGE_VERSION, WINDOWS_ACTIVATION_SCHEME } from '../constants.mjs';
 
 const DEFAULT_PACKAGE_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const WINDOWS_STARTUP_SEGMENTS = [
@@ -10,6 +10,7 @@ const WINDOWS_STARTUP_SEGMENTS = [
   'Programs',
   'Startup',
 ];
+const ACTIVATION_TEST_ID_PATTERN = /^[a-f0-9]{12}$/u;
 
 export class UnsupportedPlatformError extends Error {
   constructor(platform) {
@@ -50,6 +51,13 @@ export const createLifecyclePaths = ({
   const versionsRoot = join(dataRoot, 'versions');
   const versionRoot = join(versionsRoot, version);
   const startupFolder = join(roamingAppData, ...WINDOWS_STARTUP_SEGMENTS);
+  const activationTestId = environment.BOOKARIUM_ACTIVATION_TEST_ID;
+  if (activationTestId !== undefined && !ACTIVATION_TEST_ID_PATTERN.test(activationTestId)) {
+    throw new Error('Invalid activation test identifier.');
+  }
+  const activationScheme = activationTestId
+    ? `${WINDOWS_ACTIVATION_SCHEME}-test-${activationTestId}`
+    : WINDOWS_ACTIVATION_SCHEME;
 
   assertPathInside(localAppData, dataRoot);
   assertPathInside(dataRoot, versionsRoot);
@@ -57,6 +65,9 @@ export const createLifecyclePaths = ({
   assertPathInside(roamingAppData, startupFolder);
 
   return Object.freeze({
+    activationRegistryPath: `Software\\Classes\\${activationScheme}`,
+    activationScheme,
+    activationUri: `${activationScheme}://connect`,
     configFile: join(dataRoot, 'config.json'),
     currentFile: join(dataRoot, 'current.json'),
     dataRoot,

@@ -237,6 +237,7 @@ export const readLifecycle = async (paths) => {
   const ownership = await readOwnership(paths);
   await assertNoLinksInPath(paths.dataRoot, paths.lifecycleFile);
   const lifecycle = await readJsonFile(paths.lifecycleFile);
+  const activation = lifecycle.activation ?? null;
   if (lifecycle.schemaVersion !== STATE_SCHEMA_VERSION
     || lifecycle.installationId !== ownership.installationId
     || lifecycle.version !== paths.version
@@ -244,17 +245,27 @@ export const readLifecycle = async (paths) => {
     || !isAbsolute(lifecycle.nodePath)
     || typeof lifecycle.startupEnabled !== 'boolean'
     || typeof lifecycle.codexCommand !== 'string'
-    || !lifecycle.codexCommand) {
+    || !lifecycle.codexCommand
+    || (activation !== null && (
+      typeof activation !== 'object'
+      || Array.isArray(activation)
+      || activation.command === ''
+      || typeof activation.command !== 'string'
+      || activation.description !== 'URL:Bookarium Codex Connector'
+      || activation.registryPath !== paths.activationRegistryPath
+      || activation.scheme !== paths.activationScheme
+      || activation.uri !== paths.activationUri
+    ))) {
     throw new Error('Connector lifecycle metadata is invalid.');
   }
-  return lifecycle;
+  return { ...lifecycle, activation };
 };
 
 export const installPackage = async (paths, {
   allowedOrigin = DEFAULT_BOOKARIUM_ORIGIN,
   codexCommand = 'codex',
   nodePath = process.execPath,
-  startupEnabled = true,
+  startupEnabled = false,
 } = {}) => {
   const ownership = await ensureOwnedInstallationRoot(paths);
   await ensureDirectory(paths.dataRoot, paths.versionsRoot);
@@ -288,6 +299,7 @@ export const installPackage = async (paths, {
     version: paths.version,
   });
   const lifecycle = {
+    activation: previousLifecycle?.activation ?? null,
     codexCommand,
     installationId: ownership.installationId,
     nodePath: resolve(nodePath),

@@ -34,7 +34,7 @@ A repository-wide Codex Security scan is required for each release candidate. Va
 
 The release owner must choose among waiting for compatible upstream controls, approving a separately scoped external process-isolation boundary, disabling the explanation endpoint, or explicitly accepting the residual risk. Risk acceptance does not remediate the finding. Publication remains blocked until that decision and the clean-machine gate are complete.
 
-Before publication, run the exact tarball on a clean Windows 10/11 virtual machine with the supported minimum Node.js and a separately installed official Codex CLI. Verify official ChatGPT sign-in, automatic browser pairing, a real Bookarium explanation, restart persistence, rotation/revocation, and narrow uninstall that leaves Codex and its authentication intact. An isolated temporary profile on a development machine is useful evidence, but it does not replace this clean-VM gate.
+Before publication, run the exact tarball on a clean Windows 10/11 virtual machine with the supported minimum Node.js and a separately installed official Codex CLI. Verify official ChatGPT sign-in, automatic browser pairing, a real Bookarium explanation, restart followed by button-driven on-demand activation with retained pairing, rotation/revocation, and narrow uninstall that leaves Codex and its authentication intact. An isolated temporary profile on a development machine is useful evidence, but it does not replace this clean-VM gate.
 
 ## Publication remains disabled
 
