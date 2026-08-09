@@ -6,7 +6,7 @@ No production version is currently supported. Version 0.1.0 is an unreleased Bet
 
 ## Reporting a vulnerability
 
-Use GitHub private vulnerability reporting for `jojobeee/bookarium-codex-connector` when it is enabled. Until then, contact the repository owner privately instead of opening a public issue. Do not include Codex/ChatGPT credentials, API keys, pairing tokens, authorization headers, full learner prompts, or other secrets in a report.
+Use GitHub private vulnerability reporting for `jojo-open-dev/bookarium-codex-connector` when it is enabled. Until then, contact the repository owner privately instead of opening a public issue. Do not include Codex/ChatGPT credentials, API keys, pairing tokens, authorization headers, full learner prompts, or other secrets in a report.
 
 Include the affected connector version, operating system, reproduction steps with synthetic data, impact, and any suggested mitigation.
 

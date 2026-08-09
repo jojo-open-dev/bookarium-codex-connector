@@ -37,7 +37,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jojobeee/bookarium-codex-connector.git"
+    "url": "git+https://github.com/jojo-open-dev/bookarium-codex-connector.git"
   },
   "publishConfig": {
     "access": "public",
