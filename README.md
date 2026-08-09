@@ -4,9 +4,9 @@ Bookarium Codex Connector is a local, loopback-only bridge between the Bookarium
 
 > Beta: the connector is under active development and Codex App Server is an experimental upstream integration. Do not publish this package yet.
 
-## Current milestone
+## Current state
 
-Milestone 1 runs from a checked-out repository and preserves browser protocol version 1:
+The extracted connector and Windows lifecycle are implemented. Browser protocol version 1 remains:
 
 - `GET /readyz` returns minimal unauthenticated liveness.
 - `GET /v1/account` requires the exact allowed origin and bearer pairing token, and returns only safe account type/plan metadata.
@@ -14,7 +14,9 @@ Milestone 1 runs from a checked-out repository and preserves browser protocol ve
 
 The service binds only to `127.0.0.1:47321`. Codex App Server is spawned without a shell and communicates over JSONL stdio. MCP servers are cleared, approval policy is `never`, the sandbox is read-only, network access is disabled, and server-initiated host actions are rejected.
 
-The professional installer, Windows startup registration, browser-fragment pairing, rotation/revocation, and complete uninstall flow belong to later milestones. The `install`, `start`, `status`, `stop`, `repair`, and `uninstall` command names are reserved but intentionally fail without changing the system until those lifecycle boundaries are implemented and tested.
+On Windows 10/11, `install`, `start`, `status`, `stop`, `repair`, and `uninstall` operate below the current user's application-data directory without elevation. Startup uses one verified shortcut in the current user's Startup folder. Process control uses an authenticated named pipe, so stop never signals a process based on a reusable PID alone. See [the startup decision](docs/windows-startup.md).
+
+Professional browser-fragment pairing and rotation/revocation are the next milestone. Until that flow and its Bookarium frontend change are complete, the package is not ready for learner installation even though its Windows lifecycle is functional.
 
 ## Development
 
@@ -25,6 +27,19 @@ npm install
 npm test
 npm run pack:check
 ```
+
+The Windows commands are:
+
+```powershell
+bookarium-codex-connector install
+bookarium-codex-connector status
+bookarium-codex-connector stop
+bookarium-codex-connector start
+bookarium-codex-connector repair
+bookarium-codex-connector uninstall
+```
+
+The current-user install root is `%LOCALAPPDATA%\Bookarium\Codex Connector`. Uninstall removes only a connector tree with a valid ownership marker and a startup shortcut whose target/arguments match recorded metadata. It leaves Node.js, Codex, Codex configuration, and Codex authentication untouched.
 
 The test suite uses a fake App Server and never reads real Codex credentials. The internal checked-out-repository runner accepts the allowed origin and a 32-byte base64url pairing token through process environment only:
 

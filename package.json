@@ -9,6 +9,7 @@
   "exports": "./src/index.mjs",
   "files": [
     "bin/",
+    "docs/windows-startup.md",
     "src/",
     "CHANGELOG.md",
     "LICENSE",
