@@ -1,5 +1,6 @@
 import { DEFAULT_BOOKARIUM_ORIGIN, PACKAGE_VERSION, PROTOCOL_VERSION } from '../constants.mjs';
 import { requireAllowedOrigin } from '../bridge/origin-policy.mjs';
+import { createPairingUrl, openBrowser } from '../lifecycle/browser.mjs';
 import { pathExists, removeOwnedDirectory } from '../lifecycle/filesystem.mjs';
 import {
   installPackage,
@@ -12,7 +13,9 @@ import {
 import { createLifecyclePaths } from '../lifecycle/paths.mjs';
 import { checkPrerequisites } from '../lifecycle/prerequisites.mjs';
 import {
+  beginManagedPairing,
   getManagedStatus,
+  revokeManagedPairing,
   startManagedProcess,
   stopManagedProcess,
 } from '../lifecycle/process.mjs';
@@ -53,11 +56,19 @@ const configureStartup = async (paths, lifecycle, dependencies) => {
   return writeLifecycle(paths, { ...lifecycle, startup });
 };
 
+const launchPairing = async (paths, allowedOrigin, { beginPairing, browserOpen }) => {
+  const { pairingCode } = await beginPairing(paths);
+  const pairingUrl = createPairingUrl(allowedOrigin, pairingCode);
+  await browserOpen(pairingUrl);
+};
+
 export const installCommand = async (args, {
   environment = process.env,
   output = process.stdout,
   packageRoot,
   paths = createLifecyclePaths({ environment, packageRoot }),
+  beginPairing = beginManagedPairing,
+  browserOpen = openBrowser,
   prerequisiteCheck = checkPrerequisites,
   start = startManagedProcess,
   startupOptions = { environment },
@@ -70,12 +81,40 @@ export const installCommand = async (args, {
   });
   const running = await start(paths, { environment });
   const lifecycle = await configureStartup(paths, initialLifecycle, startupOptions);
+  const config = await readConnectorConfig(paths);
+  await launchPairing(paths, config.allowedOrigin, { beginPairing, browserOpen });
   line(output, `Bookarium Codex Connector ${PACKAGE_VERSION} installed for the current user.`);
   line(output, `Location: ${paths.dataRoot}`);
   line(output, `Startup: ${lifecycle.startup ? 'enabled' : 'disabled'}`);
   line(output, `Codex: ${prerequisites.codexVersion}`);
   line(output, running.alreadyRunning ? 'Connector was already running.' : 'Connector started.');
-  line(output, 'Browser pairing is not yet enabled in Milestone 2.');
+  line(output, 'Bookarium was opened to finish private browser pairing.');
+  return 0;
+};
+
+export const pairCommand = async ({
+  beginPairing = beginManagedPairing,
+  browserOpen = openBrowser,
+  environment = process.env,
+  output = process.stdout,
+  paths = createLifecyclePaths({ environment }),
+  start = startManagedProcess,
+} = {}) => {
+  await start(paths, { environment });
+  const config = await readConnectorConfig(paths);
+  await launchPairing(paths, config.allowedOrigin, { beginPairing, browserOpen });
+  line(output, 'Bookarium was opened to pair this browser. Existing access changes only after pairing succeeds.');
+  return 0;
+};
+
+export const revokeCommand = async ({
+  environment = process.env,
+  output = process.stdout,
+  paths = createLifecyclePaths({ environment }),
+  revoke = revokeManagedPairing,
+} = {}) => {
+  await revoke(paths);
+  line(output, 'Bookarium browser pairing was revoked. Run the pair command to connect again.');
   return 0;
 };
 
@@ -126,6 +165,8 @@ export const statusCommand = async ({
   line(output, `Codex: ${codexAvailable ? 'available' : 'unavailable'}`);
   line(output, `Authentication: ${runtime.account?.type ?? 'unavailable'}`);
   line(output, `Plan: ${runtime.account?.planType ?? 'unavailable'}`);
+  line(output, `Browser pairing: ${runtime.pairing?.paired ? 'paired' : 'not paired'}`);
+  line(output, `Pairing request: ${runtime.pairing?.pending ? 'pending' : 'none'}`);
   line(output, `Startup: ${startupRegistered ? 'registered' : lifecycle.startupEnabled ? 'needs repair' : 'disabled'}`);
   return runtime.running ? 0 : 3;
 };

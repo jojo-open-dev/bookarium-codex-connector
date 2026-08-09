@@ -12,3 +12,6 @@ All notable changes to this project will be documented here.
 - Windows per-user install, managed start/status/stop/repair/uninstall lifecycle.
 - Authenticated named-pipe process control and PID-reuse-safe shutdown.
 - Verified current-user Startup-folder shortcut registration.
+- Five-minute, single-use browser-fragment pairing restricted to the exact configured origin.
+- Browser-token rotation and revocation through authenticated lifecycle control.
+- Verifier-only pairing persistence with migration from the earlier plaintext-token state.

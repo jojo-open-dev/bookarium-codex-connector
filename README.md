@@ -6,17 +6,30 @@ Bookarium Codex Connector is a local, loopback-only bridge between the Bookarium
 
 ## Current state
 
-The extracted connector and Windows lifecycle are implemented. Browser protocol version 1 remains:
+The extracted connector, Windows lifecycle, and connector-side browser pairing are implemented. Browser protocol version 1 provides:
 
 - `GET /readyz` returns minimal unauthenticated liveness.
+- `POST /v1/pair` accepts a short-lived, single-use pairing code only from the exact allowed origin and returns a new browser bearer token.
 - `GET /v1/account` requires the exact allowed origin and bearer pairing token, and returns only safe account type/plan metadata.
 - `POST /v1/ask` applies the same authorization, accepts a bounded JSON study prompt, and starts a fresh ephemeral Codex tutor interaction.
 
 The service binds only to `127.0.0.1:47321`. Codex App Server is spawned without a shell and communicates over JSONL stdio. MCP servers are cleared, approval policy is `never`, the sandbox is read-only, network access is disabled, and server-initiated host actions are rejected.
 
-On Windows 10/11, `install`, `start`, `status`, `stop`, `repair`, and `uninstall` operate below the current user's application-data directory without elevation. Startup uses one verified shortcut in the current user's Startup folder. Process control uses an authenticated named pipe, so stop never signals a process based on a reusable PID alone. See [the startup decision](docs/windows-startup.md).
+On Windows 10/11, lifecycle and pairing commands operate below the current user's application-data directory without elevation. Startup uses one verified shortcut in the current user's Startup folder. Process control uses an authenticated named pipe, so stop never signals a process based on a reusable PID alone. See [the startup decision](docs/windows-startup.md).
 
-Professional browser-fragment pairing and rotation/revocation are the next milestone. Until that flow and its Bookarium frontend change are complete, the package is not ready for learner installation even though its Windows lifecycle is functional.
+`install` starts the connector and opens the exact configured Bookarium origin with 256 bits of one-time pairing material in the URL fragment. The request expires after five minutes and is consumed atomically. A successful `pair` operation replaces the prior browser token; `revoke` immediately removes browser authorization. The connector persists only SHA-256 token verifiers, not either plaintext pairing value.
+
+The matching Bookarium frontend fragment handling remains intentionally deferred to a separately approved frontend branch. Until that integration and the remaining release/security work are complete, the package is not ready for learner installation.
+
+## Pairing protocol
+
+The connector opens `${allowedOrigin}/#bookarium-codex-pairing=<code>`. The Bookarium page must read the fragment locally, immediately remove it from browser history, and send `POST http://127.0.0.1:47321/v1/pair` with `Content-Type: application/json`, its normal browser `Origin`, and exactly this body:
+
+```json
+{"pairingCode":"<43-character base64url code>"}
+```
+
+A successful response is `{"token":"<43-character base64url bearer token>","version":1}`. The page stores that token locally and sends it as `Authorization: Bearer <token>` to `/v1/account` and `/v1/ask`. Missing, malformed, expired, or already consumed pairing codes receive the same generic rejection.
 
 ## Development
 
@@ -33,11 +46,15 @@ The Windows commands are:
 ```powershell
 bookarium-codex-connector install
 bookarium-codex-connector status
+bookarium-codex-connector pair
+bookarium-codex-connector revoke
 bookarium-codex-connector stop
 bookarium-codex-connector start
 bookarium-codex-connector repair
 bookarium-codex-connector uninstall
 ```
+
+Use `pair` to connect a new browser or rotate browser authorization without reinstalling. Existing access remains valid while the five-minute request is pending and stops after the replacement succeeds. Use `revoke` to invalidate browser access immediately. `status` reports paired/unpaired and pending state without displaying secrets.
 
 The current-user install root is `%LOCALAPPDATA%\Bookarium\Codex Connector`. Uninstall removes only a connector tree with a valid ownership marker and a startup shortcut whose target/arguments match recorded metadata. It leaves Node.js, Codex, Codex configuration, and Codex authentication untouched.
 

@@ -53,6 +53,45 @@ test('authenticates status and stop over the private control pipe', { skip: proc
   const status = await request('status');
   assert.equal(status.ok, true);
   assert.equal(status.pid, process.pid);
+
+  const baseUrl = 'http://127.0.0.1:47321';
+  const firstRequest = await request('beginPairing');
+  assert.equal(firstRequest.pairingCode.length, 43);
+  const firstPair = await fetch(`${baseUrl}/v1/pair`, {
+    body: JSON.stringify({ pairingCode: firstRequest.pairingCode }),
+    headers: { 'Content-Type': 'application/json', Origin: config.allowedOrigin },
+    method: 'POST',
+  });
+  assert.equal(firstPair.status, 200);
+  const firstToken = (await firstPair.json()).token;
+  assert.equal(firstToken.length, 43);
+
+  const rotation = await request('beginPairing');
+  const stillAuthorized = await fetch(`${baseUrl}/v1/account`, {
+    headers: { Authorization: `Bearer ${firstToken}`, Origin: config.allowedOrigin },
+  });
+  assert.equal(stillAuthorized.status, 200);
+  const rotatedPair = await fetch(`${baseUrl}/v1/pair`, {
+    body: JSON.stringify({ pairingCode: rotation.pairingCode }),
+    headers: { 'Content-Type': 'application/json', Origin: config.allowedOrigin },
+    method: 'POST',
+  });
+  const secondToken = (await rotatedPair.json()).token;
+  assert.notEqual(secondToken, firstToken);
+  const oldAccess = await fetch(`${baseUrl}/v1/account`, {
+    headers: { Authorization: `Bearer ${firstToken}`, Origin: config.allowedOrigin },
+  });
+  assert.equal(oldAccess.status, 401);
+
+  const inspect = await request('inspect');
+  assert.deepEqual(inspect.account, { planType: 'plus', type: 'chatgpt' });
+  assert.deepEqual(inspect.pairing, { paired: true, pending: false });
+  assert.equal((await request('revokePairing')).revoked, true);
+  const revokedAccess = await fetch(`${baseUrl}/v1/account`, {
+    headers: { Authorization: `Bearer ${secondToken}`, Origin: config.allowedOrigin },
+  });
+  assert.equal(revokedAccess.status, 401);
+
   const stopped = await request('stop');
   assert.equal(stopped.stopping, true);
   await service;

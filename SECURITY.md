@@ -10,9 +10,11 @@ Use GitHub private vulnerability reporting for `jojobeee/bookarium-codex-connect
 
 Include the affected connector version, operating system, reproduction steps with synthetic data, impact, and any suggested mitigation.
 
-## Milestone 1 security posture
+## Current security posture
 
-The connector binds to IPv4 loopback, requires an exact normalized browser origin plus a 256-bit bearer token for all non-liveness operations, caps requests and responses, uses App Server only over stdio, clears MCP configuration, starts ephemeral threads, rejects App Server host-action requests, and configures `approvalPolicy: never` with a read-only/no-network turn sandbox.
+The connector binds to IPv4 loopback and requires an exact normalized browser origin plus a 256-bit bearer token for account and study operations. The unauthenticated pairing endpoint still requires that exact origin and a separate 256-bit, five-minute, single-use value. Requests and responses are capped. App Server is used only over stdio, MCP configuration is cleared, tutor threads are ephemeral, host-action requests are rejected, and turns use `approvalPolicy: never` with a read-only/no-network sandbox.
+
+The installer carries one-time pairing material only in the Bookarium URL fragment and never prints it. Pairing state stores SHA-256 verifiers rather than plaintext one-time or browser tokens. While the service runs, issuance and revocation require the authenticated named pipe; the HTTP exchange requires the exact origin and one-time value. Mutations are serialized by the running service: pending rotation preserves existing access, successful exchange replaces it, replay fails, and revocation clears active and pending authorization.
 
 The Windows lifecycle installs only a manifest-hashed file whitelist under the current user's Local AppData, rejects traversal and filesystem links at owned boundaries, writes state atomically, and refuses to claim or delete a nonempty directory without a valid ownership marker. Startup is a read-back-verified current-user shortcut. Stop uses an installation-specific named pipe and 256-bit control secret; the PID is corroborating metadata and is never used alone to terminate a process.
 

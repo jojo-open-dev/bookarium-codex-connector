@@ -2,9 +2,11 @@ import { spawn } from 'node:child_process';
 import { lstat, unlink } from 'node:fs/promises';
 import { DEFAULT_BRIDGE_HOST, DEFAULT_BRIDGE_PORT, PACKAGE_VERSION, PROTOCOL_VERSION } from '../constants.mjs';
 import { toSafeAccount } from '../app-server/protocol.mjs';
+import { isValidPairingToken } from '../bridge/pairing.mjs';
 import { assertNoLinksInPath, pathExists, readJsonFile } from './filesystem.mjs';
 import { getControlPipeName, sendControlRequest } from './control-pipe.mjs';
 import { readConnectorConfig, readLifecycle, verifyInstalledVersion } from './installation.mjs';
+import { createPairingAuthority } from './pairing-state.mjs';
 
 const STARTUP_TIMEOUT_MS = 30_000;
 const STALE_LOCK_AGE_MS = 30_000;
@@ -158,20 +160,82 @@ export const stopManagedProcess = async (paths, {
   throw new Error('The connector did not stop within the expected time.');
 };
 
+const sendVerifiedRuntimeAction = async (paths, action, {
+  control = sendControlRequest,
+} = {}) => {
+  const config = await readConnectorConfig(paths);
+  const running = await probeManagedProcess(paths, { control }).catch(() => null);
+  if (!running) throw new Error('The connector must be running for this operation.');
+  const response = await control({
+    action,
+    controlSecret: config.controlSecret,
+    installationId: config.installationId,
+    pipeName: getControlPipeName(config.installationId),
+  });
+  if (!response?.ok
+    || response.installationId !== config.installationId
+    || response.pid !== running.state.pid
+    || response.version !== PACKAGE_VERSION) {
+    throw new Error('The connector refused the authenticated control request.');
+  }
+  return { config, response, running };
+};
+
+export const beginManagedPairing = async (paths, options = {}) => {
+  const { response } = await sendVerifiedRuntimeAction(paths, 'beginPairing', options);
+  if (!isValidPairingToken(response.pairingCode)
+    || !Number.isSafeInteger(response.expiresAt)
+    || response.expiresAt <= Date.now()) {
+    throw new Error('The connector returned an invalid pairing request.');
+  }
+  return { expiresAt: response.expiresAt, pairingCode: response.pairingCode };
+};
+
+export const revokeManagedPairing = async (paths, {
+  control = sendControlRequest,
+} = {}) => {
+  const config = await readConnectorConfig(paths);
+  const running = await probeManagedProcess(paths, { control }).catch(() => null);
+  if (running) {
+    const { response } = await sendVerifiedRuntimeAction(paths, 'revokePairing', { control });
+    if (response.revoked !== true) throw new Error('The connector did not revoke browser pairing.');
+    return true;
+  }
+  const recordedProcess = await readProcessState(paths).catch(() => null);
+  if (recordedProcess && isProcessAlive(recordedProcess.pid)) {
+    throw new Error('Browser pairing could not be revoked while connector identity was unverified.');
+  }
+  const pairing = createPairingAuthority(paths, {
+    allowedOrigin: config.allowedOrigin,
+    installationId: config.installationId,
+  });
+  await pairing.revoke();
+  return true;
+};
+
 export const getManagedStatus = async (paths, { control = sendControlRequest } = {}) => {
   const config = await readConnectorConfig(paths);
   const running = await probeManagedProcess(paths, { control }).catch(() => null);
   let account = null;
+  const pairingAuthority = createPairingAuthority(paths, {
+    allowedOrigin: config.allowedOrigin,
+    installationId: config.installationId,
+  });
+  const pairing = await pairingAuthority.status();
   if (running) {
     try {
-      const response = await fetch(`http://${DEFAULT_BRIDGE_HOST}:${DEFAULT_BRIDGE_PORT}/v1/account`, {
-        headers: {
-          Authorization: `Bearer ${config.pairingToken}`,
-          Origin: config.allowedOrigin,
-        },
-        signal: AbortSignal.timeout(3_000),
+      const response = await control({
+        action: 'inspect',
+        controlSecret: config.controlSecret,
+        installationId: config.installationId,
+        pipeName: getControlPipeName(config.installationId),
       });
-      if (response.ok) account = toSafeAccount(await response.json());
+      if (response?.ok
+        && response.installationId === config.installationId
+        && response.pid === running.state.pid
+        && response.version === PACKAGE_VERSION) {
+        account = toSafeAccount({ account: response.account });
+      }
     } catch {
       account = null;
     }
@@ -180,6 +244,7 @@ export const getManagedStatus = async (paths, { control = sendControlRequest } =
     account,
     address: `${DEFAULT_BRIDGE_HOST}:${DEFAULT_BRIDGE_PORT}`,
     allowedOrigin: config.allowedOrigin,
+    pairing,
     protocolVersion: PROTOCOL_VERSION,
     running: Boolean(running),
     version: PACKAGE_VERSION,

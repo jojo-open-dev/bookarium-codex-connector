@@ -8,8 +8,11 @@ import { atomicWriteJson, pathExists } from '../../src/lifecycle/filesystem.mjs'
 import { installPackage, readConnectorConfig } from '../../src/lifecycle/installation.mjs';
 import { createLifecyclePaths } from '../../src/lifecycle/paths.mjs';
 import {
+  beginManagedPairing,
   cleanStaleRuntimeState,
+  getManagedStatus,
   probeManagedProcess,
+  revokeManagedPairing,
   startManagedProcess,
   stopManagedProcess,
 } from '../../src/lifecycle/process.mjs';
@@ -120,4 +123,51 @@ test('verified stop waits for control shutdown and removes only runtime state', 
   assert.equal(await pathExists(paths.processFile), false);
   assert.equal(await pathExists(paths.lockFile), false);
   await cleanStaleRuntimeState(paths);
+});
+
+test('uses only authenticated control actions for live pairing and safe status', async (testContext) => {
+  const { config, paths, state } = await setup(testContext);
+  const pairingCode = 'P'.repeat(43);
+  const base = {
+    installationId: config.installationId,
+    ok: true,
+    pid: state.pid,
+    version: '0.1.0',
+  };
+  const actions = [];
+  const control = async ({ action }) => {
+    actions.push(action);
+    if (action === 'status') return base;
+    if (action === 'beginPairing') {
+      return { ...base, expiresAt: Date.now() + 60_000, pairingCode };
+    }
+    if (action === 'inspect') {
+      return {
+        ...base,
+        account: { planType: 'plus', private: 'discard', type: 'chatgpt' },
+        pairing: { paired: false, pending: true },
+      };
+    }
+    if (action === 'revokePairing') return { ...base, revoked: true };
+    return null;
+  };
+
+  const request = await beginManagedPairing(paths, { control });
+  assert.equal(request.pairingCode, pairingCode);
+  assert.equal(request.expiresAt > Date.now(), true);
+  const status = await getManagedStatus(paths, { control });
+  assert.deepEqual(status.account, { planType: 'plus', type: 'chatgpt' });
+  assert.equal(status.running, true);
+  assert.equal(await revokeManagedPairing(paths, { control }), true);
+  assert.equal(actions.includes('inspect'), true);
+  assert.equal(actions.includes('revokePairing'), true);
+});
+
+test('refuses an out-of-band revocation while a recorded process is still alive but unverified', async (testContext) => {
+  const { paths, state } = await setup(testContext);
+  await atomicWriteJson(paths.dataRoot, paths.processFile, { ...state, pid: process.pid });
+  await assert.rejects(
+    () => revokeManagedPairing(paths, { control: async () => null }),
+    /identity was unverified/u,
+  );
 });

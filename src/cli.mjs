@@ -1,7 +1,9 @@
 import { PACKAGE_NAME, PACKAGE_VERSION, PROTOCOL_VERSION } from './constants.mjs';
 import {
   installCommand,
+  pairCommand,
   repairCommand,
+  revokeCommand,
   startCommand,
   statusCommand,
   stopCommand,
@@ -16,6 +18,8 @@ Usage:
   bookarium-codex-connector install [--allowed-origin <origin>] [--no-startup]
   bookarium-codex-connector start
   bookarium-codex-connector status
+  bookarium-codex-connector pair
+  bookarium-codex-connector revoke
   bookarium-codex-connector stop
   bookarium-codex-connector repair
   bookarium-codex-connector uninstall
@@ -26,6 +30,8 @@ Commands:
   install     Install for the current user, register startup, and start the connector.
   start       Start the installed connector if it is not already running.
   status      Show safe connector, Codex, account, origin, and startup status.
+  pair        Open a short-lived, single-use browser pairing request.
+  revoke      Revoke browser access without changing Codex authentication.
   stop        Stop only the authenticated process owned by this installation.
   repair      Verify files and recreate lifecycle configuration without rotating pairing.
   uninstall   Remove only Bookarium-owned connector files and startup registration.
@@ -43,7 +49,9 @@ export const runCli = async (
   {
     commandHandlers = {
       install: installCommand,
+      pair: pairCommand,
       repair: repairCommand,
+      revoke: revokeCommand,
       start: startCommand,
       status: statusCommand,
       stop: stopCommand,

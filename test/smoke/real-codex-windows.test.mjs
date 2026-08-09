@@ -39,7 +39,7 @@ test('installs, starts, inspects, stops, and uninstalls with the real local Code
     '--allowed-origin',
     'http://localhost:5173',
     '--no-startup',
-  ], { environment, output, paths }), 0);
+  ], { browserOpen: async () => {}, environment, output, paths }), 0);
   assert.equal(await statusCommand({ environment, output, paths }), 0);
   assert.match(output.data, /Process: running/u);
   assert.match(output.data, /Authentication: chatgpt/u);

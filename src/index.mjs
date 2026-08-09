@@ -1,7 +1,6 @@
 import { CodexAppServerClient } from './app-server/client.mjs';
 import { createBridgeServer } from './bridge/http-server.mjs';
 import { requireAllowedOrigin } from './bridge/origin-policy.mjs';
-import { isValidPairingToken } from './bridge/pairing.mjs';
 import { DEFAULT_BRIDGE_HOST, DEFAULT_BRIDGE_PORT } from './constants.mjs';
 
 export { CodexAppServerClient } from './app-server/client.mjs';
@@ -12,15 +11,20 @@ export * from './constants.mjs';
 export const startConnectorServer = async ({
   allowedOrigin,
   client = new CodexAppServerClient(),
+  pairing,
   port = DEFAULT_BRIDGE_PORT,
   token,
 } = {}) => {
   const normalizedOrigin = requireAllowedOrigin(allowedOrigin);
-  if (!isValidPairingToken(token)) throw new Error('A 256-bit base64url pairing token is required.');
   if (!Number.isInteger(port) || port < 0 || port > 65_535) throw new Error('Invalid connector port.');
 
   await client.start?.();
-  const server = createBridgeServer({ allowedOrigin: normalizedOrigin, client, token });
+  const server = createBridgeServer({
+    allowedOrigin: normalizedOrigin,
+    client,
+    pairing,
+    token,
+  });
   try {
     await new Promise((resolve, reject) => {
       server.once('error', reject);
