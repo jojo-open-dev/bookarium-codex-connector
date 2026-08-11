@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { open, unlink } from 'node:fs/promises';
 import { createServer as createControlServer } from 'node:net';
 import { CodexAppServerClient } from '../app-server/client.mjs';
+import { toSafeAccount } from '../app-server/protocol.mjs';
 import { pairingTokenMatches } from '../bridge/pairing.mjs';
 import { DEFAULT_BRIDGE_PORT, PACKAGE_VERSION, PROTOCOL_VERSION } from '../constants.mjs';
 import { startConnectorServer } from '../index.mjs';
@@ -19,6 +20,7 @@ import {
   verifyInstalledVersion,
 } from '../lifecycle/installation.mjs';
 import { createLifecyclePaths } from '../lifecycle/paths.mjs';
+import { createPairingAuthority } from '../lifecycle/pairing-state.mjs';
 import { readProcessState } from '../lifecycle/process.mjs';
 
 const MAX_CONTROL_REQUEST_BYTES = 4 * 1_024;
@@ -39,7 +41,23 @@ const closeServer = (server) => new Promise((resolve) => {
   server.close(() => resolve());
 });
 
-const createAuthenticatedControlServer = ({ config, onStop }) => createControlServer((socket) => {
+const readSafeAccount = (client) => new Promise((resolve) => {
+  let settled = false;
+  const finish = (value) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    resolve(value);
+  };
+  const timer = setTimeout(() => finish(null), 1_500);
+  timer.unref?.();
+  client.readAccount().then(
+    (account) => finish(toSafeAccount({ account })),
+    () => finish(null),
+  );
+});
+
+const createAuthenticatedControlServer = ({ config, getAccount, onStop, pairing }) => createControlServer((socket) => {
   socket.on('error', () => {});
   let bytes = 0;
   let handled = false;
@@ -71,20 +89,35 @@ const createAuthenticatedControlServer = ({ config, onStop }) => createControlSe
       socket.end(JSON.stringify({ ok: false }));
       return;
     }
-    const response = {
-      installationId: config.installationId,
-      ok: true,
-      pid: process.pid,
-      version: PACKAGE_VERSION,
+    const respond = async () => {
+      const response = {
+        installationId: config.installationId,
+        ok: true,
+        pid: process.pid,
+        version: PACKAGE_VERSION,
+      };
+      if (request.action === 'status') return response;
+      if (request.action === 'inspect') {
+        const [account, pairingStatus] = await Promise.all([getAccount(), pairing.status()]);
+        return { ...response, account, pairing: pairingStatus };
+      }
+      if (request.action === 'beginPairing') {
+        return { ...response, ...await pairing.issue() };
+      }
+      if (request.action === 'revokePairing') {
+        await pairing.revoke();
+        return { ...response, revoked: true };
+      }
+      if (request.action === 'stop') {
+        setImmediate(onStop);
+        return { ...response, stopping: true };
+      }
+      return { ok: false };
     };
-    if (request.action === 'status') {
-      socket.end(JSON.stringify(response));
-    } else if (request.action === 'stop') {
-      socket.end(JSON.stringify({ ...response, stopping: true }));
-      setImmediate(onStop);
-    } else {
-      socket.end(JSON.stringify({ ok: false }));
-    }
+    void respond().then(
+      (value) => socket.end(JSON.stringify(value)),
+      () => socket.end(JSON.stringify({ ok: false })),
+    );
   });
 });
 
@@ -120,6 +153,7 @@ export const runManagedService = async ({
 
   let connector = null;
   let controlServer = null;
+  let pairing = null;
   let shuttingDown = false;
   let finish;
   const stopped = new Promise((resolve) => { finish = resolve; });
@@ -150,13 +184,23 @@ export const runManagedService = async ({
 
   try {
     const client = clientFactory(lifecycle, paths);
+    pairing = createPairingAuthority(paths, {
+      allowedOrigin: config.allowedOrigin,
+      installationId: config.installationId,
+    });
+    await pairing.status();
     connector = await startConnectorServer({
       allowedOrigin: config.allowedOrigin,
       client,
+      pairing,
       port: DEFAULT_BRIDGE_PORT,
-      token: config.pairingToken,
     });
-    controlServer = createAuthenticatedControlServer({ config, onStop: shutdown });
+    controlServer = createAuthenticatedControlServer({
+      config,
+      getAccount: () => readSafeAccount(client),
+      onStop: shutdown,
+      pairing,
+    });
     const controlPipe = getControlPipeName(config.installationId);
     await listen(controlServer, controlPipe);
     await atomicWriteJson(paths.dataRoot, paths.processFile, {

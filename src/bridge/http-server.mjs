@@ -12,7 +12,7 @@ import { toSafeAccount } from '../app-server/protocol.mjs';
 import { requireAllowedOrigin, requestOriginMatches } from './origin-policy.mjs';
 import { isValidPairingToken, pairingTokenMatches } from './pairing.mjs';
 
-const PUBLIC_PATHS = new Set(['/v1/account', '/v1/ask']);
+const PUBLIC_PATHS = new Set(['/v1/account', '/v1/ask', '/v1/pair']);
 
 export class BridgeHttpError extends Error {
   constructor(statusCode, publicMessage, { allow = null } = {}) {
@@ -99,16 +99,23 @@ const validatePreflight = (request, path) => {
     .map((header) => header.trim().toLowerCase())
     .filter(Boolean);
   const allowedHeaders = new Set(['authorization', 'content-type']);
-  if (!requestedHeaders.includes('authorization')
+  const requiredHeaders = path === '/v1/account'
+    ? ['authorization']
+    : path === '/v1/ask'
+      ? ['authorization', 'content-type']
+      : ['content-type'];
+  if (requiredHeaders.some((header) => !requestedHeaders.includes(header))
     || requestedHeaders.some((header) => !allowedHeaders.has(header))
-    || (path === '/v1/ask' && !requestedHeaders.includes('content-type'))) {
+    || (path === '/v1/pair' && requestedHeaders.includes('authorization'))) {
     throw new BridgeHttpError(403, 'CORS preflight is not allowed.');
   }
 
   return {
-    'Access-Control-Allow-Headers': path === '/v1/ask'
-      ? 'Authorization, Content-Type'
-      : 'Authorization',
+    'Access-Control-Allow-Headers': path === '/v1/account'
+      ? 'Authorization'
+      : path === '/v1/ask'
+        ? 'Authorization, Content-Type'
+        : 'Content-Type',
     'Access-Control-Allow-Methods': expectedMethod,
     ...(request.headers['access-control-request-private-network'] === 'true'
       ? { 'Access-Control-Allow-Private-Network': 'true' }
@@ -119,9 +126,23 @@ const validatePreflight = (request, path) => {
   };
 };
 
-export const createBridgeServer = ({ allowedOrigin, client, token }) => {
-  const normalizedOrigin = requireAllowedOrigin(allowedOrigin);
+const resolvePairingAuthority = ({ pairing, token }) => {
+  if (pairing !== undefined) {
+    if (!pairing || typeof pairing.authenticate !== 'function') {
+      throw new Error('A connector pairing authority is required.');
+    }
+    return pairing;
+  }
   if (!isValidPairingToken(token)) throw new Error('A 256-bit base64url pairing token is required.');
+  return {
+    authenticate: async (supplied) => pairingTokenMatches(token, supplied),
+    exchange: null,
+  };
+};
+
+export const createBridgeServer = ({ allowedOrigin, client, pairing, token }) => {
+  const normalizedOrigin = requireAllowedOrigin(allowedOrigin);
+  const pairingAuthority = resolvePairingAuthority({ pairing, token });
   if (!client || typeof client.readAccount !== 'function' || typeof client.ask !== 'function') {
     throw new Error('A Codex App Server client is required.');
   }
@@ -161,8 +182,28 @@ export const createBridgeServer = ({ allowedOrigin, client, token }) => {
         throw new BridgeHttpError(405, 'Method not allowed.', { allow: expectedMethod });
       }
 
+      if (path === '/v1/pair') {
+        if (typeof pairingAuthority.exchange !== 'function') {
+          throw new BridgeHttpError(409, 'Browser pairing is unavailable.');
+        }
+        const mediaType = String(request.headers['content-type'] ?? '').split(';', 1)[0].trim().toLowerCase();
+        if (mediaType !== 'application/json') {
+          throw new BridgeHttpError(415, 'Content-Type must be application/json.');
+        }
+        const body = await readJsonBody(request);
+        if (Object.keys(body).some((key) => key !== 'pairingCode')) {
+          throw new BridgeHttpError(400, 'Request body contains unsupported fields.');
+        }
+        const issuedToken = await pairingAuthority.exchange(body.pairingCode);
+        if (!isValidPairingToken(issuedToken)) {
+          throw new BridgeHttpError(401, 'Pairing request is invalid or expired.');
+        }
+        writeJson(response, 200, { token: issuedToken, version: PROTOCOL_VERSION }, normalizedOrigin);
+        return;
+      }
+
       const suppliedToken = parseBearerToken(request.headers.authorization);
-      if (!pairingTokenMatches(token, suppliedToken)) {
+      if (!await pairingAuthority.authenticate(suppliedToken)) {
         throw new BridgeHttpError(401, 'Connector authorization is invalid.');
       }
 

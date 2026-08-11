@@ -13,6 +13,7 @@ export const MAX_APP_SERVER_FRAME_BYTES = 1024 * 1_024;
 export const APP_SERVER_REQUEST_TIMEOUT_MS = 30_000;
 export const APP_SERVER_TURN_TIMEOUT_MS = 120_000;
 export const HTTP_REQUEST_TIMEOUT_MS = 15_000;
+export const PAIRING_REQUEST_TTL_MS = 5 * 60 * 1_000;
 
 export const APP_SERVER_CLIENT_NAME = 'bookarium_codex_connector';
 export const APP_SERVER_CLIENT_TITLE = 'Bookarium Codex Connector';

@@ -67,6 +67,7 @@ export const createLifecyclePaths = ({
     manifestFile: join(versionRoot, 'install-manifest.json'),
     nodePath: resolve(process.execPath),
     ownershipFile: join(dataRoot, 'ownership.json'),
+    pairingFile: join(dataRoot, 'pairing.json'),
     packageRoot: resolve(packageRoot),
     processFile: join(dataRoot, 'process.json'),
     roamingAppData,

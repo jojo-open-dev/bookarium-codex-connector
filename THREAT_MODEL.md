@@ -20,7 +20,7 @@ The primary runtime surfaces are the CLI, the HTTP bridge bound to `127.0.0.1:47
 ### Trust boundaries
 
 1. **Remote network to loopback service.** Network peers must not be able to reach the connector. The service must bind explicitly to `127.0.0.1`, never a wildcard or externally routed interface.
-2. **Web page to local HTTP bridge.** Any page can attempt requests to localhost. Only the exactly paired Bookarium origin may receive CORS authorization, and every non-liveness operation must also present the bearer pairing token.
+2. **Web page to local HTTP bridge.** Any page can attempt requests to localhost. Only the exactly configured Bookarium origin may receive CORS authorization. Account and study operations must also present the bearer pairing token; the initial pairing exchange instead requires a separate short-lived, single-use value.
 3. **Bookarium content to Codex turn.** Exercise text, learner input, and generated prompt context are untrusted data. They must not change the connector's fixed tutor instructions, enable tools, approvals, file writes, or network access.
 4. **Connector to official Codex CLI.** The connector may spawn `codex app-server` using an argument array and communicate over stdio. It must not read, parse, copy, log, or transmit Codex credential files or credential-store contents.
 5. **Codex App Server to connector.** JSONL messages, notifications, errors, and server-initiated requests are untrusted protocol input. Framing, identifiers, sizes, lifecycle events, and unexpected host-action requests must be handled defensively.
@@ -45,7 +45,7 @@ The learner controls installation, Codex login, pairing, status, stopping, repai
 - The official Codex CLI is installed separately and is responsible for its own authentication cache and upstream communication.
 - The connector runs as the current operating-system user and never requests elevation.
 - The public listener is loopback-only. Port discovery alone grants no authority.
-- `/readyz` reveals only minimal protocol liveness. All other browser endpoints require an exact paired origin and a high-entropy bearer token.
+- `/readyz` reveals only minimal protocol liveness. All browser endpoints require the exact configured origin except liveness; account and study endpoints additionally require a high-entropy bearer token, while pairing requires the short-lived one-time value.
 - Pairing material is never placed in the npm command, logs, error messages, test snapshots, or Codex prompts. The later one-time pairing value is short-lived, single-use, and carried in a URL fragment.
 - The browser receives no Codex access token, refresh token, API key, or credential-store content.
 - App Server runs over stdio, behind an adapter, with an empty MCP configuration. Tutor turns use no approvals, a read-only sandbox, and disabled network access.
@@ -66,7 +66,7 @@ DNS rebinding, `null`/opaque origins, wildcard origins, origin suffix matching, 
 
 ### Pairing and browser-held authorization
 
-An attacker may try to obtain pairing material from shell history, query-string telemetry, referrers, browser history, logs, or replay of the initial pairing request. The intended professional-pairing design uses at least 256 random bits, places only a short-lived one-time value in a URL fragment, removes it from browser history, locks the resulting connection to the exact Bookarium origin, and supports rotation and revocation. Milestone 1 must keep pairing/token concerns behind an interface so the temporary local-development configuration can be replaced without changing the public browser endpoints.
+An attacker may try to obtain pairing material from shell history, query-string telemetry, referrers, browser history, logs, or replay of the initial pairing request. The connector-side professional-pairing design uses 256 random bits, places only a five-minute one-time value in a URL fragment, locks the resulting connection to the exact Bookarium origin, persists only token verifiers, consumes successful exchanges atomically, and supports rotation and revocation. The frontend must remove the fragment from browser history immediately after reading it. Pairing/token concerns remain behind an interface so the development-only static-token runner does not affect the managed lifecycle.
 
 ### Exercise prompt and Codex execution
 

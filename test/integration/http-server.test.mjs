@@ -11,14 +11,78 @@ const authorizedHeaders = { Authorization: `Bearer ${token}`, Origin: origin };
 const startServer = async (testContext, client = {
   ask: async (prompt) => `Answer: ${prompt}`,
   readAccount: async () => ({ planType: 'plus', type: 'chatgpt' }),
-}) => {
-  const server = createBridgeServer({ allowedOrigin: origin, client, token });
+}, options = {}) => {
+  const server = createBridgeServer({ allowedOrigin: origin, client, token, ...options });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   testContext.after(() => new Promise((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   }));
   return `http://127.0.0.1:${server.address().port}`;
 };
+
+test('exchanges an origin-bound pairing request once and authorizes only the issued token', async (testContext) => {
+  const pairingCode = 'P'.repeat(43);
+  const issuedToken = 'T'.repeat(43);
+  let pending = pairingCode;
+  let active = null;
+  const pairing = {
+    authenticate: async (supplied) => supplied === active,
+    exchange: async (supplied) => {
+      if (supplied !== pending) return null;
+      pending = null;
+      active = issuedToken;
+      return issuedToken;
+    },
+  };
+  const baseUrl = await startServer(testContext, undefined, { pairing });
+
+  const preflight = await fetch(`${baseUrl}/v1/pair`, {
+    headers: {
+      'Access-Control-Request-Headers': 'content-type',
+      'Access-Control-Request-Method': 'POST',
+      Origin: origin,
+    },
+    method: 'OPTIONS',
+  });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-headers'), 'Content-Type');
+
+  const wrongOrigin = await fetch(`${baseUrl}/v1/pair`, {
+    body: JSON.stringify({ pairingCode }),
+    headers: { 'Content-Type': 'application/json', Origin: 'https://attacker.example' },
+    method: 'POST',
+  });
+  assert.equal(wrongOrigin.status, 403);
+  assert.equal(wrongOrigin.headers.get('access-control-allow-origin'), null);
+
+  const malformed = await fetch(`${baseUrl}/v1/pair`, {
+    body: JSON.stringify({ pairingCode: 'malformed' }),
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    method: 'POST',
+  });
+  assert.equal(malformed.status, 401);
+
+  const paired = await fetch(`${baseUrl}/v1/pair`, {
+    body: JSON.stringify({ pairingCode }),
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    method: 'POST',
+  });
+  assert.equal(paired.status, 200);
+  assert.deepEqual(await paired.json(), { token: issuedToken, version: PROTOCOL_VERSION });
+  assert.equal(paired.headers.get('cache-control'), 'no-store');
+
+  const replay = await fetch(`${baseUrl}/v1/pair`, {
+    body: JSON.stringify({ pairingCode }),
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    method: 'POST',
+  });
+  assert.equal(replay.status, 401);
+
+  const account = await fetch(`${baseUrl}/v1/account`, {
+    headers: { Authorization: `Bearer ${issuedToken}`, Origin: origin },
+  });
+  assert.equal(account.status, 200);
+});
 
 test('exposes minimal unauthenticated readiness without CORS or account data', async (testContext) => {
   const baseUrl = await startServer(testContext);

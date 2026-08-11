@@ -26,9 +26,11 @@ import {
   removeOwnedDirectory,
 } from './filesystem.mjs';
 import { assertPathInside } from './paths.mjs';
+import { initializePairingState } from './pairing-state.mjs';
 
 const OWNERSHIP_PRODUCT = 'bookarium-codex-connector';
 const STATE_SCHEMA_VERSION = 1;
+const CONFIG_SCHEMA_VERSION = 2;
 const PACKAGE_FILE_ENTRIES = [
   'bin',
   'src',
@@ -171,14 +173,63 @@ export const readConnectorConfig = async (paths) => {
   await assertNoLinksInPath(paths.dataRoot, paths.configFile);
   const config = await readJsonFile(paths.configFile);
   const allowedOrigin = requireAllowedOrigin(config.allowedOrigin);
-  if (config.schemaVersion !== STATE_SCHEMA_VERSION
+  if (config.schemaVersion !== CONFIG_SCHEMA_VERSION
     || config.protocolVersion !== PROTOCOL_VERSION
     || config.installationId !== ownership.installationId
-    || !isValidPairingToken(config.pairingToken)
-    || !isValidPairingToken(config.controlSecret)) {
+    || !isValidPairingToken(config.controlSecret)
+    || Object.hasOwn(config, 'pairingToken')) {
     throw new Error('Connector configuration is invalid.');
   }
   return { ...config, allowedOrigin };
+};
+
+const ensureConnectorConfig = async (paths, ownership, allowedOrigin) => {
+  if (!await pathExists(paths.configFile)) {
+    const config = {
+      allowedOrigin,
+      controlSecret: generatePairingToken(),
+      installationId: ownership.installationId,
+      protocolVersion: PROTOCOL_VERSION,
+      schemaVersion: CONFIG_SCHEMA_VERSION,
+    };
+    await atomicWriteJson(paths.dataRoot, paths.configFile, config);
+    await initializePairingState(paths, {
+      allowedOrigin,
+      installationId: ownership.installationId,
+    });
+    return readConnectorConfig(paths);
+  }
+
+  await assertNoLinksInPath(paths.dataRoot, paths.configFile);
+  const existing = await readJsonFile(paths.configFile);
+  if (existing.schemaVersion === STATE_SCHEMA_VERSION
+    && existing.protocolVersion === PROTOCOL_VERSION
+    && existing.installationId === ownership.installationId
+    && requireAllowedOrigin(existing.allowedOrigin) === allowedOrigin
+    && isValidPairingToken(existing.controlSecret)
+    && isValidPairingToken(existing.pairingToken)) {
+    await initializePairingState(paths, {
+      activeToken: existing.pairingToken,
+      allowedOrigin,
+      installationId: ownership.installationId,
+    });
+    await atomicWriteJson(paths.dataRoot, paths.configFile, {
+      allowedOrigin,
+      controlSecret: existing.controlSecret,
+      installationId: ownership.installationId,
+      protocolVersion: PROTOCOL_VERSION,
+      schemaVersion: CONFIG_SCHEMA_VERSION,
+    });
+  }
+  const config = await readConnectorConfig(paths);
+  if (config.allowedOrigin !== allowedOrigin) {
+    throw new Error('The installed connector is locked to a different Bookarium origin.');
+  }
+  await initializePairingState(paths, {
+    allowedOrigin: config.allowedOrigin,
+    installationId: config.installationId,
+  });
+  return config;
 };
 
 export const readLifecycle = async (paths) => {
@@ -229,18 +280,7 @@ export const installPackage = async (paths, {
   if (await pathExists(paths.lifecycleFile)) {
     previousLifecycle = await readLifecycle(paths).catch(() => null);
   }
-  if (!await pathExists(paths.configFile)) {
-    await atomicWriteJson(paths.dataRoot, paths.configFile, {
-      allowedOrigin: normalizedOrigin,
-      controlSecret: generatePairingToken(),
-      installationId: ownership.installationId,
-      pairingToken: generatePairingToken(),
-      protocolVersion: PROTOCOL_VERSION,
-      schemaVersion: STATE_SCHEMA_VERSION,
-    });
-  } else {
-    await readConnectorConfig(paths);
-  }
+  await ensureConnectorConfig(paths, ownership, normalizedOrigin);
 
   await atomicWriteJson(paths.dataRoot, paths.currentFile, {
     schemaVersion: STATE_SCHEMA_VERSION,

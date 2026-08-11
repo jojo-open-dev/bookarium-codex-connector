@@ -12,6 +12,7 @@ import {
   verifyInstalledVersion,
 } from '../../src/lifecycle/installation.mjs';
 import { createLifecyclePaths } from '../../src/lifecycle/paths.mjs';
+import { createPairingAuthority } from '../../src/lifecycle/pairing-state.mjs';
 
 const packageRoot = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -39,8 +40,10 @@ test('installs only reviewed files with a verifiable manifest and private state'
   assert.equal(Object.hasOwn(manifest.files, 'test/unit/installation.test.mjs'), false);
   const config = await readConnectorConfig(paths);
   assert.equal(config.allowedOrigin, 'https://bienemaja.app');
-  assert.equal(config.pairingToken.length, 43);
+  assert.equal(Object.hasOwn(config, 'pairingToken'), false);
   assert.equal(config.controlSecret.length, 43);
+  const pairingState = await readFile(paths.pairingFile, 'utf8');
+  assert.doesNotMatch(pairingState, /[A-Za-z0-9_-]{43}/u);
   const lifecycle = await readLifecycle(paths);
   assert.equal(lifecycle.startupEnabled, true);
   assert.equal(await pathExists(paths.installedBinary), true);
@@ -64,4 +67,28 @@ test('refuses to claim a nonempty directory without the ownership marker', async
   await writeFile(sentinel, 'keep', 'utf8');
   await assert.rejects(() => installPackage(paths), /without an ownership marker/u);
   assert.equal(await readFile(sentinel, 'utf8'), 'keep');
+});
+
+test('migrates a legacy plaintext browser token to a verifier without changing access', async (testContext) => {
+  const { paths } = await setupInstallation(testContext);
+  await installPackage(paths, { startupEnabled: false });
+  const config = await readConnectorConfig(paths);
+  const legacyToken = 'L'.repeat(43);
+  await rm(paths.pairingFile);
+  await writeFile(paths.configFile, `${JSON.stringify({
+    ...config,
+    pairingToken: legacyToken,
+    schemaVersion: 1,
+  }, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+
+  await installPackage(paths, { startupEnabled: false });
+  const migrated = await readConnectorConfig(paths);
+  assert.equal(Object.hasOwn(migrated, 'pairingToken'), false);
+  const authority = createPairingAuthority(paths, {
+    allowedOrigin: migrated.allowedOrigin,
+    installationId: migrated.installationId,
+  });
+  assert.equal(await authority.authenticate(legacyToken), true);
+  assert.equal((await readFile(paths.configFile, 'utf8')).includes(legacyToken), false);
+  assert.equal((await readFile(paths.pairingFile, 'utf8')).includes(legacyToken), false);
 });
