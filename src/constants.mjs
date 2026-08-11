@@ -4,6 +4,7 @@ export const PROTOCOL_VERSION = 1;
 
 export const DEFAULT_BRIDGE_HOST = '127.0.0.1';
 export const DEFAULT_BRIDGE_PORT = 47_321;
+export const DEFAULT_BOOKARIUM_ORIGIN = 'https://bienemaja.app';
 
 export const MAX_PROMPT_LENGTH = 2_000;
 export const MAX_BODY_BYTES = 16 * 1_024;

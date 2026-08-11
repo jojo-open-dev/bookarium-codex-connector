@@ -1,43 +1,56 @@
 import { PACKAGE_NAME, PACKAGE_VERSION, PROTOCOL_VERSION } from './constants.mjs';
+import {
+  installCommand,
+  repairCommand,
+  startCommand,
+  statusCommand,
+  stopCommand,
+  uninstallCommand,
+} from './commands/lifecycle.mjs';
+import { runManagedService } from './runtime/managed-service.mjs';
 import { startConnectorServer } from './index.mjs';
-
-const RESERVED_LIFECYCLE_COMMANDS = new Set([
-  'install',
-  'repair',
-  'start',
-  'status',
-  'stop',
-  'uninstall',
-]);
 
 export const HELP_TEXT = `Bookarium Codex Connector ${PACKAGE_VERSION} Beta
 
 Usage:
-  bookarium-codex-connector --help
+  bookarium-codex-connector install [--allowed-origin <origin>] [--no-startup]
+  bookarium-codex-connector start
+  bookarium-codex-connector status
+  bookarium-codex-connector stop
+  bookarium-codex-connector repair
+  bookarium-codex-connector uninstall
   bookarium-codex-connector --version
-  bookarium-codex-connector serve
+  bookarium-codex-connector --help
 
 Commands:
-  serve       Run Milestone 1 from this checkout using protected environment configuration.
-  install     Reserved for the reviewed per-user installer (Milestone 2/3).
-  start       Reserved for managed background startup (Milestone 2).
-  status      Reserved for safe status inspection (Milestone 2).
-  stop        Reserved for verified process shutdown (Milestone 2).
-  repair      Reserved for safe lifecycle repair (Milestone 2).
-  uninstall   Reserved for narrow removal (Milestone 2).
-
-The serve command reads BOOKARIUM_CODEX_ALLOWED_ORIGIN and
-BOOKARIUM_CODEX_PAIRING_TOKEN. It never prints the token.
+  install     Install for the current user, register startup, and start the connector.
+  start       Start the installed connector if it is not already running.
+  status      Show safe connector, Codex, account, origin, and startup status.
+  stop        Stop only the authenticated process owned by this installation.
+  repair      Verify files and recreate lifecycle configuration without rotating pairing.
+  uninstall   Remove only Bookarium-owned connector files and startup registration.
+  serve       Development-only checked-out-repository runner using environment configuration.
 `;
 
 const write = (stream, value) => {
   stream.write(value.endsWith('\n') ? value : `${value}\n`);
 };
 
+const quietOutput = { write() {} };
+
 export const runCli = async (
   args = process.argv.slice(2),
   {
+    commandHandlers = {
+      install: installCommand,
+      repair: repairCommand,
+      start: startCommand,
+      status: statusCommand,
+      stop: stopCommand,
+      uninstall: uninstallCommand,
+    },
     environment = process.env,
+    managedService = runManagedService,
     startServer = startConnectorServer,
     stderr = process.stderr,
     stdout = process.stdout,
@@ -53,9 +66,21 @@ export const runCli = async (
   }
 
   const command = args[0];
-  if (RESERVED_LIFECYCLE_COMMANDS.has(command)) {
-    write(stderr, `${command} is reserved and intentionally unavailable in Milestone 1; no system changes were made.`);
-    return 2;
+  if (command === 'run-managed') {
+    if (args.length !== 1) throw new Error('run-managed does not accept arguments.');
+    await managedService();
+    return 0;
+  }
+  if (command === 'start-managed') {
+    if (args.length !== 1) throw new Error('start-managed does not accept arguments.');
+    return commandHandlers.start({ environment, output: quietOutput });
+  }
+  if (Object.hasOwn(commandHandlers, command)) {
+    if (command === 'install') {
+      return commandHandlers.install(args.slice(1), { environment, output: stdout });
+    }
+    if (args.length !== 1) throw new Error(`${command} does not accept arguments.`);
+    return commandHandlers[command]({ environment, output: stdout });
   }
   if (command !== 'serve' || args.length !== 1) {
     write(stderr, 'Unknown command. Run bookarium-codex-connector --help.');

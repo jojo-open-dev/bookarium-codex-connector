@@ -22,12 +22,22 @@ test('prints version and help without starting the connector', async () => {
   assert.match(stdout.data, /Usage:/u);
 });
 
-test('reserved and unknown commands return useful nonzero exit codes', async () => {
+test('delegates lifecycle commands and rejects unknown commands', async () => {
+  const stdout = capture();
   const stderr = capture();
-  assert.equal(await runCli(['install'], { stderr }), 2);
-  assert.match(stderr.data, /intentionally unavailable.*no system changes/u);
+  let receivedArgs;
+  assert.equal(await runCli(['install', '--no-startup'], {
+    commandHandlers: {
+      install: async (args) => {
+        receivedArgs = args;
+        return 0;
+      },
+    },
+    stderr,
+    stdout,
+  }), 0);
+  assert.deepEqual(receivedArgs, ['--no-startup']);
 
-  stderr.data = '';
-  assert.equal(await runCli(['arbitrary'], { stderr }), 2);
+  assert.equal(await runCli(['arbitrary'], { commandHandlers: {}, stderr }), 2);
   assert.match(stderr.data, /Unknown command/u);
 });
