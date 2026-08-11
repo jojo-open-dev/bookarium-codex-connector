@@ -28,7 +28,7 @@ test('creates, reads back, and narrowly removes an isolated per-user Windows sho
   await mkdir(environment.APPDATA, { recursive: true });
   await mkdir(environment.LOCALAPPDATA, { recursive: true });
   const paths = createLifecyclePaths({ environment, packageRoot, platform: 'win32' });
-  await installPackage(paths);
+  await installPackage(paths, { startupEnabled: true });
   const lifecycle = await readLifecycle(paths);
   testContext.after(() => rm(root, { force: true, recursive: true }));
 

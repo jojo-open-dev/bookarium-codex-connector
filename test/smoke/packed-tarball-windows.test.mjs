@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -112,6 +113,7 @@ test('installs the actual npm tarball through npx in an isolated Windows profile
   const environment = {
     ...process.env,
     APPDATA: roamingAppData,
+    BOOKARIUM_ACTIVATION_TEST_ID: randomBytes(6).toString('hex'),
     LOCALAPPDATA: localAppData,
     npm_config_cache: npmCache,
     Path: `${fakeBin};${process.env.Path ?? ''}`,
@@ -129,7 +131,7 @@ test('installs the actual npm tarball through npx in an isolated Windows profile
   const output = [];
   output.push(await invoke(['install', '--allowed-origin', 'http://localhost:5173']));
   assert.equal(await pathExists(dataRoot), true);
-  assert.equal(await pathExists(startupFile), true);
+  assert.equal(await pathExists(startupFile), false);
   output.push(await invoke(['status']));
   output.push(await invoke(['pair']));
   output.push(await invoke(['revoke']));
@@ -137,5 +139,6 @@ test('installs the actual npm tarball through npx in an isolated Windows profile
   assert.equal(await pathExists(dataRoot), false);
   assert.equal(await pathExists(startupFile), false);
   assert.match(output.join(''), /Authentication: chatgpt/u);
+  assert.match(output.join(''), /On-demand connection: registered/u);
   assert.doesNotMatch(output.join(''), /\b[A-Za-z0-9_-]{43}\b/u);
 });

@@ -20,6 +20,12 @@ import {
   stopManagedProcess,
 } from '../lifecycle/process.mjs';
 import {
+  createProtocolHandler,
+  protocolHandlerMatches,
+  readProtocolHandler,
+  removeProtocolHandler,
+} from '../lifecycle/activation/windows.mjs';
+import {
   createStartupShortcut,
   readStartupShortcut,
   removeStartupShortcut,
@@ -30,7 +36,8 @@ const line = (output, value) => output.write(`${value}\n`);
 
 const parseInstallArguments = (args) => {
   let allowedOrigin = DEFAULT_BOOKARIUM_ORIGIN;
-  let startupEnabled = true;
+  let startupEnabled = false;
+  let startupOption = null;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (argument === '--allowed-origin') {
@@ -38,13 +45,30 @@ const parseInstallArguments = (args) => {
       if (!value || value.startsWith('--')) throw new Error('--allowed-origin requires a value.');
       allowedOrigin = requireAllowedOrigin(value);
       index += 1;
-    } else if (argument === '--no-startup') {
-      startupEnabled = false;
+    } else if (argument === '--startup' || argument === '--no-startup') {
+      const requested = argument === '--startup';
+      if (startupOption !== null && startupOption !== requested) {
+        throw new Error('--startup and --no-startup cannot be used together.');
+      }
+      startupEnabled = requested;
+      startupOption = requested;
     } else {
       throw new Error(`Unknown install option: ${argument}`);
     }
   }
   return { allowedOrigin, startupEnabled };
+};
+
+const defaultActivation = Object.freeze({
+  create: createProtocolHandler,
+  matches: protocolHandlerMatches,
+  read: readProtocolHandler,
+  remove: removeProtocolHandler,
+});
+
+const configureActivation = async (paths, lifecycle, activation, options) => {
+  const registered = await activation.create(paths, lifecycle, options);
+  return writeLifecycle(paths, { ...lifecycle, activation: registered });
 };
 
 const configureStartup = async (paths, lifecycle, dependencies) => {
@@ -68,6 +92,8 @@ export const installCommand = async (args, {
   packageRoot,
   paths = createLifecyclePaths({ environment, packageRoot }),
   beginPairing = beginManagedPairing,
+  activation = defaultActivation,
+  activationOptions = { environment },
   browserOpen = openBrowser,
   prerequisiteCheck = checkPrerequisites,
   start = startManagedProcess,
@@ -79,13 +105,15 @@ export const installCommand = async (args, {
     allowedOrigin: options.allowedOrigin,
     startupEnabled: options.startupEnabled,
   });
+  const activatedLifecycle = await configureActivation(paths, initialLifecycle, activation, activationOptions);
+  const lifecycle = await configureStartup(paths, activatedLifecycle, startupOptions);
   const running = await start(paths, { environment });
-  const lifecycle = await configureStartup(paths, initialLifecycle, startupOptions);
   const config = await readConnectorConfig(paths);
   await launchPairing(paths, config.allowedOrigin, { beginPairing, browserOpen });
   line(output, `Bookarium Codex Connector ${PACKAGE_VERSION} installed for the current user.`);
   line(output, `Location: ${paths.dataRoot}`);
   line(output, `Startup: ${lifecycle.startup ? 'enabled' : 'disabled'}`);
+  line(output, 'On-demand connection: registered');
   line(output, `Codex: ${prerequisites.codexVersion}`);
   line(output, running.alreadyRunning ? 'Connector was already running.' : 'Connector started.');
   line(output, 'Bookarium was opened to finish private browser pairing.');
@@ -142,6 +170,8 @@ export const stopCommand = async ({
 
 export const statusCommand = async ({
   environment = process.env,
+  activation = defaultActivation,
+  activationOptions = { environment },
   output = process.stdout,
   paths = createLifecyclePaths({ environment }),
   prerequisiteCheck = checkPrerequisites,
@@ -152,6 +182,10 @@ export const statusCommand = async ({
   const lifecycle = await readLifecycle(paths);
   const config = await readConnectorConfig(paths);
   const runtime = await status(paths);
+  const actualActivation = await activation.read(paths, activationOptions);
+  const activationRegistered = Boolean(lifecycle.activation
+    && actualActivation
+    && activation.matches(actualActivation, lifecycle.activation));
   const actualStartup = await readStartupShortcut(paths, startupOptions);
   const startupRegistered = Boolean(lifecycle.startup
     && actualStartup
@@ -167,12 +201,15 @@ export const statusCommand = async ({
   line(output, `Plan: ${runtime.account?.planType ?? 'unavailable'}`);
   line(output, `Browser pairing: ${runtime.pairing?.paired ? 'paired' : 'not paired'}`);
   line(output, `Pairing request: ${runtime.pairing?.pending ? 'pending' : 'none'}`);
+  line(output, `On-demand connection: ${activationRegistered ? 'registered' : 'needs repair'}`);
   line(output, `Startup: ${startupRegistered ? 'registered' : lifecycle.startupEnabled ? 'needs repair' : 'disabled'}`);
   return runtime.running ? 0 : 3;
 };
 
 export const repairCommand = async ({
   environment = process.env,
+  activation = defaultActivation,
+  activationOptions = { environment },
   output = process.stdout,
   paths = createLifecyclePaths({ environment }),
   prerequisiteCheck = checkPrerequisites,
@@ -183,7 +220,8 @@ export const repairCommand = async ({
   await verifyInstalledVersion(paths);
   await readConnectorConfig(paths);
   const lifecycle = await readLifecycle(paths);
-  await configureStartup(paths, lifecycle, startupOptions);
+  const activatedLifecycle = await configureActivation(paths, lifecycle, activation, activationOptions);
+  await configureStartup(paths, activatedLifecycle, startupOptions);
   await start(paths, { environment });
   line(output, 'Bookarium Codex Connector lifecycle repaired without changing pairing data.');
   return 0;
@@ -191,6 +229,8 @@ export const repairCommand = async ({
 
 export const uninstallCommand = async ({
   environment = process.env,
+  activation = defaultActivation,
+  activationOptions = { environment },
   output = process.stdout,
   paths = createLifecyclePaths({ environment }),
   startupOptions = { environment },
@@ -203,6 +243,7 @@ export const uninstallCommand = async ({
   await validateInstallationForRemoval(paths);
   const lifecycle = await readLifecycle(paths);
   await stop(paths);
+  await activation.remove(paths, lifecycle.activation, activationOptions);
   await removeStartupShortcut(paths, lifecycle.startup, startupOptions);
   await validateInstallationForRemoval(paths);
   await removeOwnedDirectory(paths.localAppData, paths.dataRoot, {

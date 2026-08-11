@@ -31,6 +31,7 @@ export const EXPECTED_PACKED_FILES = Object.freeze([
   'src/constants.mjs',
   'src/index.mjs',
   'src/lifecycle/browser.mjs',
+  'src/lifecycle/activation/windows.mjs',
   'src/lifecycle/control-pipe.mjs',
   'src/lifecycle/filesystem.mjs',
   'src/lifecycle/installation.mjs',

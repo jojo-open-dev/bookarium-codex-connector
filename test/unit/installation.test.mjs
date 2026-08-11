@@ -45,7 +45,8 @@ test('installs only reviewed files with a verifiable manifest and private state'
   const pairingState = await readFile(paths.pairingFile, 'utf8');
   assert.doesNotMatch(pairingState, /[A-Za-z0-9_-]{43}/u);
   const lifecycle = await readLifecycle(paths);
-  assert.equal(lifecycle.startupEnabled, true);
+  assert.equal(lifecycle.startupEnabled, false);
+  assert.equal(lifecycle.activation, null);
   assert.equal(await pathExists(paths.installedBinary), true);
 });
 test('detects installed file changes and unexpected files', async (testContext) => {

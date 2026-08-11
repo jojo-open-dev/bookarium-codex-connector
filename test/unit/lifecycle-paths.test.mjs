@@ -25,10 +25,16 @@ test('resolves every lifecycle file below fixed per-user boundaries', async (tes
   const paths = createLifecyclePaths({ environment: setup.environment, platform: 'win32' });
 
   assert.equal(paths.dataRoot.startsWith(setup.environment.LOCALAPPDATA), true);
+  assert.equal(paths.activationRegistryPath, 'Software\\Classes\\bookarium-codex');
+  assert.equal(paths.activationUri, 'bookarium-codex://connect');
   assert.equal(paths.startupFile.startsWith(setup.environment.APPDATA), true);
   assert.match(paths.startupFile, /Startup[\\/]Bookarium Codex Connector\.lnk$/u);
   assert.throws(() => assertPathInside(paths.dataRoot, join(paths.dataRoot, '..', 'victim')));
   assert.throws(() => createLifecyclePaths({ environment: setup.environment, platform: 'linux' }), UnsupportedPlatformError);
+  assert.throws(() => createLifecyclePaths({
+    environment: { ...setup.environment, BOOKARIUM_ACTIVATION_TEST_ID: '..\\unsafe' },
+    platform: 'win32',
+  }), /activation test identifier/u);
 });
 test('rejects filesystem links in an owned path before following them', async (testContext) => {
   const setup = await createEnvironment();

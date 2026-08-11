@@ -34,10 +34,41 @@ test('installs, reports, repairs, and uninstalls only an isolated owned tree', a
   const output = capture();
   const prerequisiteCheck = async () => ({ codexVersion: 'codex-cli test', nodeVersion: process.versions.node });
   const start = async () => ({ alreadyRunning: false });
+  let activationState = null;
+  const activation = {
+    create: async (activationPaths) => {
+      activationState = {
+        command: 'fixed start-managed command',
+        description: 'URL:Bookarium Codex Connector',
+        registryPath: activationPaths.activationRegistryPath,
+        scheme: activationPaths.activationScheme,
+        uri: activationPaths.activationUri,
+      };
+      return activationState;
+    },
+    matches: (actual, expected) => JSON.stringify(actual) === JSON.stringify(expected),
+    read: async () => activationState,
+    remove: async (activationPaths, expected) => {
+      assert.equal(activationPaths, paths);
+      assert.deepEqual(expected, activationState);
+      activationState = null;
+      return true;
+    },
+  };
   const pairingCode = 'P'.repeat(43);
   let openedUrl = null;
 
-  assert.equal(await installCommand(['--no-startup'], {
+  await assert.rejects(() => installCommand(['--startup', '--no-startup'], {
+    activation,
+    environment,
+    output,
+    paths,
+    prerequisiteCheck,
+    start,
+  }), /cannot be used together/u);
+
+  assert.equal(await installCommand([], {
+    activation,
     environment,
     beginPairing: async () => ({ expiresAt: Date.now() + 60_000, pairingCode }),
     browserOpen: async (url) => { openedUrl = url; },
@@ -47,12 +78,14 @@ test('installs, reports, repairs, and uninstalls only an isolated owned tree', a
     start,
   }), 0);
   assert.equal(await pathExists(paths.dataRoot), true);
+  assert.equal(activationState.uri, 'bookarium-codex://connect');
   assert.doesNotMatch(output.data, /[A-Za-z0-9_-]{43}/u);
   assert.match(openedUrl, /^https:\/\/bienemaja\.app\/#bookarium-codex-pairing=/u);
   assert.equal(new URL(openedUrl).hash.includes(pairingCode), true);
 
   output.data = '';
   assert.equal(await statusCommand({
+    activation,
     environment,
     output,
     paths,
@@ -66,9 +99,11 @@ test('installs, reports, repairs, and uninstalls only an isolated owned tree', a
   }), 0);
   assert.match(output.data, /Authentication: chatgpt/u);
   assert.match(output.data, /Startup: disabled/u);
+  assert.match(output.data, /On-demand connection: registered/u);
   assert.match(output.data, /Browser pairing: paired/u);
 
   assert.equal(await repairCommand({
+    activation,
     environment,
     output,
     paths,
@@ -96,11 +131,13 @@ test('installs, reports, repairs, and uninstalls only an isolated owned tree', a
   assert.equal(revoked, true);
 
   assert.equal(await uninstallCommand({
+    activation,
     environment,
     output,
     paths,
     stop: async () => false,
   }), 0);
   assert.equal(await pathExists(paths.dataRoot), false);
+  assert.equal(activationState, null);
   assert.equal(await readFile(sentinel, 'utf8'), 'keep');
 });

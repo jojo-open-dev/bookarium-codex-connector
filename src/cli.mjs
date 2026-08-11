@@ -15,7 +15,7 @@ import { startConnectorServer } from './index.mjs';
 export const HELP_TEXT = `Bookarium Codex Connector ${PACKAGE_VERSION} Beta
 
 Usage:
-  bookarium-codex-connector install [--allowed-origin <origin>] [--no-startup]
+  bookarium-codex-connector install [--allowed-origin <origin>] [--startup]
   bookarium-codex-connector start
   bookarium-codex-connector status
   bookarium-codex-connector pair
@@ -27,13 +27,13 @@ Usage:
   bookarium-codex-connector --help
 
 Commands:
-  install     Install for the current user, register startup, and start the connector.
+  install     Install for the current user, register on-demand activation, and start pairing.
   start       Start the installed connector if it is not already running.
   status      Show safe connector, Codex, account, origin, and startup status.
   pair        Open a short-lived, single-use browser pairing request.
   revoke      Revoke browser access without changing Codex authentication.
   stop        Stop only the authenticated process owned by this installation.
-  repair      Verify files and recreate lifecycle configuration without rotating pairing.
+  repair      Verify files and recreate activation/lifecycle configuration without rotating pairing.
   uninstall   Remove only Bookarium-owned connector files and startup registration.
   serve       Development-only checked-out-repository runner using environment configuration.
 `;

@@ -12,6 +12,7 @@ All notable changes to this project will be documented here.
 - Windows per-user install, managed start/status/stop/repair/uninstall lifecycle.
 - Authenticated named-pipe process control and PID-reuse-safe shutdown.
 - Verified current-user Startup-folder shortcut registration.
+- Read-back-verified `bookarium-codex://connect` activation for a one-click, terminal-free start from Bookarium.
 - Five-minute, single-use browser-fragment pairing restricted to the exact configured origin.
 - Browser-token rotation and revocation through authenticated lifecycle control.
 - Verifier-only pairing persistence with migration from the earlier plaintext-token state.
@@ -19,6 +20,10 @@ All notable changes to this project will be documented here.
 - A manual, non-publishing release-candidate workflow with independent tar inspection, checksums, and source-commit manifest.
 - Windows packed-tarball install/status/pair/revoke/uninstall smoke coverage in an isolated temporary profile.
 - Support and local release-process documentation.
+
+### Changed
+
+- Make on-demand Windows activation the default and automatic sign-in startup an explicit `install --startup` option.
 
 ### Security
 

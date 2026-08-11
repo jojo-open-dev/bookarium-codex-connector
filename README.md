@@ -15,13 +15,15 @@ The extracted connector, Windows lifecycle, and connector-side browser pairing a
 
 The service binds only to `127.0.0.1:47321`. Codex App Server is spawned without a shell and communicates over JSONL stdio. MCP servers are cleared, approval policy is `never`, network access is disabled, the sandbox is read-only, and the turn working directory is the connector's empty temporary workspace. Server-initiated host actions and every non-passive turn item fail closed; unsafe, malformed, oversized, or timed-out turns terminate the App Server before the connector accepts more work.
 
-On Windows 10/11, lifecycle and pairing commands operate below the current user's application-data directory without elevation. Startup uses one verified shortcut in the current user's Startup folder. Process control uses an authenticated named pipe, so stop never signals a process based on a reusable PID alone. See [the startup decision](docs/windows-startup.md).
+On Windows 10/11, lifecycle and pairing commands operate below the current user's application-data directory without elevation. Installation registers the per-user `bookarium-codex://connect` protocol for user-initiated, on-demand startup. The handler contains only the fixed installed `start-managed` command: it accepts no browser-supplied command, path, origin, prompt, or secret. Automatic sign-in startup is optional through `install --startup`. Process control uses an authenticated named pipe, so stop never signals a process based on a reusable PID alone. See [the Windows activation decision](docs/windows-startup.md).
 
 `install` starts the connector and opens the exact configured Bookarium origin with 256 bits of one-time pairing material in the URL fragment. The request expires after five minutes and is consumed atomically. A successful `pair` operation replaces the prior browser token; `revoke` immediately removes browser authorization. The connector persists only SHA-256 token verifiers, not either plaintext pairing value.
 
+On later visits, Bookarium first probes the connector. If it is stopped, a direct user click on **Connect Codex** opens `bookarium-codex://connect`; Windows launches the registered connector, and Bookarium polls `/readyz` before reusing the saved browser token. A normal webpage never executes Node.js or a shell command directly. The connector remains running after activation until it is stopped or the user session ends.
+
 Read-only Linux/Windows CI and a manual local-release-candidate workflow verify source hygiene, immutable action pins, tests, dependency audit, the exact npm file allowlist, and the packed archive. They contain no publication step or write-capable token. See [the release process](docs/release-process.md).
 
-The matching Bookarium frontend fragment handling remains intentionally deferred to a separately approved frontend branch. A clean Windows VM end-to-end test and resolution or explicit owner acceptance of the documented App Server tool-isolation limitation are also required. Until those gates are complete, the package is not ready for learner installation or publication.
+The matching Bookarium frontend fragment handling exists on its separate approved branch; button-driven activation and bounded readiness polling remain to be added there. A clean Windows VM end-to-end test and resolution or explicit owner acceptance of the documented App Server tool-isolation limitation are also required. Until those gates are complete, the package is not ready for learner installation or publication.
 
 ## Pairing protocol
 
@@ -32,6 +34,16 @@ The connector opens `${allowedOrigin}/#bookarium-codex-pairing=<code>`. The Book
 ```
 
 A successful response is `{"token":"<43-character base64url bearer token>","version":1}`. The page stores that token locally and sends it as `Authorization: Bearer <token>` to `/v1/account` and `/v1/ask`. Missing, malformed, expired, or already consumed pairing codes receive the same generic rejection.
+
+## On-demand activation contract
+
+The Windows installer registers this fixed URI:
+
+```text
+bookarium-codex://connect
+```
+
+The Bookarium frontend may open it only from an explicit user action. It must then poll `GET http://127.0.0.1:47321/readyz` for up to 30 seconds and, after protocol version 1 becomes ready, call `/v1/account` with the browser's existing bearer token. Activation carries no parameters and does not authorize the caller. If readiness never appears, the UI should offer install/repair guidance; if `/v1/account` rejects the saved token, the UI should offer the existing pairing flow.
 
 ## Development
 
@@ -56,9 +68,11 @@ bookarium-codex-connector repair
 bookarium-codex-connector uninstall
 ```
 
+`install` registers on-demand activation but does not enable automatic Windows sign-in startup by default. Use `install --startup` only when the user explicitly prefers automatic background startup. The legacy `--no-startup` option remains accepted and is equivalent to the default.
+
 Use `pair` to connect a new browser or rotate browser authorization without reinstalling. Existing access remains valid while the five-minute request is pending and stops after the replacement succeeds. Use `revoke` to invalidate browser access immediately. `status` reports paired/unpaired and pending state without displaying secrets.
 
-The current-user install root is `%LOCALAPPDATA%\Bookarium\Codex Connector`. Uninstall removes only a connector tree with a valid ownership marker and a startup shortcut whose target/arguments match recorded metadata. It leaves Node.js, Codex, Codex configuration, and Codex authentication untouched.
+The current-user install root is `%LOCALAPPDATA%\Bookarium\Codex Connector`. Uninstall removes only a connector tree with a valid ownership marker, the exact read-back-verified per-user protocol handler, and any startup shortcut whose target/arguments match recorded metadata. It leaves Node.js, Codex, Codex configuration, and Codex authentication untouched.
 
 The test suite uses a fake App Server and never reads real Codex credentials. The internal checked-out-repository runner accepts the allowed origin and a 32-byte base64url pairing token through process environment only:
 
