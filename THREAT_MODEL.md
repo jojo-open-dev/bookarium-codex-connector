@@ -87,7 +87,7 @@ Malformed origins, ports, paths, PID files, activation state, and stale installa
 
 ### Package and release supply chain
 
-`npx` executes published package contents on the learner's machine, making dependency confusion, registry takeover, malicious lifecycle scripts, unpinned actions, leaked npm credentials, and unexpected packed files material threats. Controls include a small dependency surface, lockfile review, automated tests, `npm pack --dry-run`, secret/dependency scanning, reviewed tags, protected GitHub environments, npm trusted publishing with provenance, exact user-facing versions, and explicit owner approval. This repository must not publish during implementation work.
+`npx` executes published package contents on the learner's machine, making dependency confusion, registry takeover, malicious lifecycle scripts, unpinned actions, leaked npm credentials, and unexpected packed files material threats. Controls include a small dependency surface, lockfile review, automated tests, `npm pack --dry-run`, secret/dependency scanning, reviewed tags, protected GitHub environments, npm trusted publishing with provenance, exact user-facing versions, and explicit owner approval. This repository must not publish during implementation work. Install and repair consider only absolute native-executable candidates from the process search path and the standard per-user npm Codex launcher, require the official version-output shape, and record an absolute shell-free command plus at most one absolute launcher path. Later browser and CLI starts consume that owned lifecycle metadata instead of resolving a new command from their inherited environment.
 
 ### Availability and abuse
 

@@ -124,6 +124,7 @@ const createAuthenticatedControlServer = ({ config, getAccount, onStop, pairing 
 export const runManagedService = async ({
   clientFactory = (lifecycle, paths) => new CodexAppServerClient({
     command: lifecycle.codexCommand,
+    commandArgsPrefix: lifecycle.codexArgsPrefix,
     workspace: paths.workspace,
   }),
   paths = createLifecyclePaths(),

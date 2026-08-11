@@ -4,6 +4,7 @@ import { createPairingUrl, openBrowser } from '../lifecycle/browser.mjs';
 import { pathExists, removeOwnedDirectory } from '../lifecycle/filesystem.mjs';
 import {
   installPackage,
+  LIFECYCLE_SCHEMA_VERSION,
   readConnectorConfig,
   readLifecycle,
   validateInstallationForRemoval,
@@ -103,6 +104,8 @@ export const installCommand = async (args, {
   const prerequisites = await prerequisiteCheck({ environment });
   const { lifecycle: initialLifecycle } = await installPackage(paths, {
     allowedOrigin: options.allowedOrigin,
+    codexArgsPrefix: prerequisites.codexArgsPrefix,
+    codexCommand: prerequisites.codexCommand,
     startupEnabled: options.startupEnabled,
   });
   const activatedLifecycle = await configureActivation(paths, initialLifecycle, activation, activationOptions);
@@ -190,7 +193,11 @@ export const statusCommand = async ({
   const startupRegistered = Boolean(lifecycle.startup
     && actualStartup
     && startupShortcutMatches(actualStartup, lifecycle.startup));
-  const codexAvailable = await prerequisiteCheck({ environment }).then(() => true, () => false);
+  const codexAvailable = await prerequisiteCheck({
+    codexArgsPrefix: lifecycle.codexArgsPrefix,
+    codexCommand: lifecycle.codexCommand,
+    environment,
+  }).then(() => true, () => false);
   line(output, `Package version: ${PACKAGE_VERSION}`);
   line(output, `Protocol version: ${PROTOCOL_VERSION}`);
   line(output, `Process: ${runtime.running ? 'running' : 'stopped'}`);
@@ -216,11 +223,17 @@ export const repairCommand = async ({
   start = startManagedProcess,
   startupOptions = { environment },
 } = {}) => {
-  await prerequisiteCheck({ environment });
   await verifyInstalledVersion(paths);
   await readConnectorConfig(paths);
   const lifecycle = await readLifecycle(paths);
-  const activatedLifecycle = await configureActivation(paths, lifecycle, activation, activationOptions);
+  const prerequisites = await prerequisiteCheck({ environment });
+  const refreshedLifecycle = await writeLifecycle(paths, {
+    ...lifecycle,
+    codexArgsPrefix: prerequisites.codexArgsPrefix,
+    codexCommand: prerequisites.codexCommand,
+    schemaVersion: LIFECYCLE_SCHEMA_VERSION,
+  });
+  const activatedLifecycle = await configureActivation(paths, refreshedLifecycle, activation, activationOptions);
   await configureStartup(paths, activatedLifecycle, startupOptions);
   await start(paths, { environment });
   line(output, 'Bookarium Codex Connector lifecycle repaired without changing pairing data.');

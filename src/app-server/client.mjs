@@ -74,6 +74,7 @@ export class CodexAppServerClient {
   constructor({
     appServerArgs = ['app-server', '--listen', 'stdio://', '--config', 'mcp_servers={}'],
     command = 'codex',
+    commandArgsPrefix = [],
     environment = process.env,
     maximumFrameBytes = MAX_APP_SERVER_FRAME_BYTES,
     maximumItemCount = MAX_APP_SERVER_TURN_ITEMS,
@@ -88,6 +89,7 @@ export class CodexAppServerClient {
   } = {}) {
     this.appServerArgs = [...appServerArgs];
     this.command = command;
+    this.commandArgsPrefix = [...commandArgsPrefix];
     this.environment = environment;
     this.maximumFrameBytes = maximumFrameBytes;
     this.maximumItemCount = maximumItemCount;
@@ -131,7 +133,7 @@ export class CodexAppServerClient {
 
   async #startProcess() {
     await mkdir(this.workspace, { recursive: true, mode: 0o700 });
-    const child = this.spawnProcess(this.command, this.appServerArgs, {
+    const child = this.spawnProcess(this.command, [...this.commandArgsPrefix, ...this.appServerArgs], {
       cwd: this.workspace,
       env: this.environment,
       shell: false,

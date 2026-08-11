@@ -52,14 +52,19 @@ const readAudit = async (path) => (await readFile(path, 'utf8'))
   .map((line) => JSON.parse(line));
 
 test('spawns App Server without a shell and returns only safe account data', async (testContext) => {
-  const { auditPath, client, spawns } = await createFixtureClient(testContext);
+  const { auditPath, client, spawns } = await createFixtureClient(
+    testContext,
+    {},
+    { commandArgsPrefix: ['--no-warnings'] },
+  );
   assert.deepEqual(client.appServerArgs, [fixturePath]);
+  assert.deepEqual(client.commandArgsPrefix, ['--no-warnings']);
   const account = await client.readAccount();
 
   assert.deepEqual(account, { planType: 'plus', type: 'chatgpt' });
   assert.equal(spawns.length, 1);
   assert.equal(spawns[0].command, process.execPath);
-  assert.deepEqual(spawns[0].args, [fixturePath]);
+  assert.deepEqual(spawns[0].args, ['--no-warnings', fixturePath]);
   assert.equal(spawns[0].options.shell, false);
   assert.deepEqual(spawns[0].options.stdio, ['pipe', 'pipe', 'pipe']);
 

@@ -47,6 +47,9 @@ test('installs only reviewed files with a verifiable manifest and private state'
   const lifecycle = await readLifecycle(paths);
   assert.equal(lifecycle.startupEnabled, false);
   assert.equal(lifecycle.activation, null);
+  assert.equal(lifecycle.codexCommand, process.execPath);
+  assert.deepEqual(lifecycle.codexArgsPrefix, []);
+  assert.equal(lifecycle.schemaVersion, 2);
   assert.equal(await pathExists(paths.installedBinary), true);
 });
 test('detects installed file changes and unexpected files', async (testContext) => {

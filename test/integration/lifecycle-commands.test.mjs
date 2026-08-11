@@ -32,7 +32,12 @@ test('installs, reports, repairs, and uninstalls only an isolated owned tree', a
   await writeFile(sentinel, 'keep', 'utf8');
   testContext.after(() => rm(root, { force: true, recursive: true }));
   const output = capture();
-  const prerequisiteCheck = async () => ({ codexVersion: 'codex-cli test', nodeVersion: process.versions.node });
+  const prerequisiteCheck = async () => ({
+    codexArgsPrefix: [],
+    codexCommand: process.execPath,
+    codexVersion: 'codex-cli test',
+    nodeVersion: process.versions.node,
+  });
   const start = async () => ({ alreadyRunning: false });
   let activationState = null;
   const activation = {
