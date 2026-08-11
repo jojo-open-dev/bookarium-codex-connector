@@ -13,13 +13,15 @@ The extracted connector, Windows lifecycle, and connector-side browser pairing a
 - `GET /v1/account` requires the exact allowed origin and bearer pairing token, and returns only safe account type/plan metadata.
 - `POST /v1/ask` applies the same authorization, accepts a bounded JSON study prompt, and starts a fresh ephemeral Codex tutor interaction.
 
-The service binds only to `127.0.0.1:47321`. Codex App Server is spawned without a shell and communicates over JSONL stdio. MCP servers are cleared, approval policy is `never`, the sandbox is read-only, network access is disabled, and server-initiated host actions are rejected.
+The service binds only to `127.0.0.1:47321`. Codex App Server is spawned without a shell and communicates over JSONL stdio. MCP servers are cleared, approval policy is `never`, network access is disabled, the sandbox is read-only, and the turn working directory is the connector's empty temporary workspace. Server-initiated host actions and every non-passive turn item fail closed; unsafe, malformed, oversized, or timed-out turns terminate the App Server before the connector accepts more work.
 
 On Windows 10/11, lifecycle and pairing commands operate below the current user's application-data directory without elevation. Startup uses one verified shortcut in the current user's Startup folder. Process control uses an authenticated named pipe, so stop never signals a process based on a reusable PID alone. See [the startup decision](docs/windows-startup.md).
 
 `install` starts the connector and opens the exact configured Bookarium origin with 256 bits of one-time pairing material in the URL fragment. The request expires after five minutes and is consumed atomically. A successful `pair` operation replaces the prior browser token; `revoke` immediately removes browser authorization. The connector persists only SHA-256 token verifiers, not either plaintext pairing value.
 
-The matching Bookarium frontend fragment handling remains intentionally deferred to a separately approved frontend branch. Until that integration and the remaining release/security work are complete, the package is not ready for learner installation.
+Read-only Linux/Windows CI and a manual local-release-candidate workflow verify source hygiene, immutable action pins, tests, dependency audit, the exact npm file allowlist, and the packed archive. They contain no publication step or write-capable token. See [the release process](docs/release-process.md).
+
+The matching Bookarium frontend fragment handling remains intentionally deferred to a separately approved frontend branch. A clean Windows VM end-to-end test and resolution or explicit owner acceptance of the documented App Server tool-isolation limitation are also required. Until those gates are complete, the package is not ready for learner installation or publication.
 
 ## Pairing protocol
 

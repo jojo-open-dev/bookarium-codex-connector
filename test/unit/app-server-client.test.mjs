@@ -7,13 +7,14 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import {
   CodexAppServerClient,
+  ConnectorBusyError,
   UnsafeToolActivityError,
 } from '../../src/app-server/client.mjs';
 import { STUDY_ASSISTANT_INSTRUCTIONS } from '../../src/constants.mjs';
 
 const fixturePath = fileURLToPath(new URL('../../fixtures/fake-app-server.mjs', import.meta.url));
 
-const createFixtureClient = async (testContext, extraEnvironment = {}) => {
+const createFixtureClient = async (testContext, extraEnvironment = {}, clientOptions = {}) => {
   const directory = await mkdtemp(join(tmpdir(), 'bookarium-client-test-'));
   const auditPath = join(directory, 'audit.jsonl');
   const spawns = [];
@@ -26,14 +27,19 @@ const createFixtureClient = async (testContext, extraEnvironment = {}) => {
       ...extraEnvironment,
     },
     spawnProcess: (command, args, options) => {
-      spawns.push({ args, command, options });
-      return spawn(command, args, options);
+      const child = spawn(command, args, options);
+      spawns.push({ args, child, command, options });
+      return child;
     },
     turnTimeoutMs: 2_000,
     workspace: join(directory, 'workspace'),
+    ...clientOptions,
   });
   testContext.after(async () => {
     await client.stop();
+    for (const { child } of spawns) {
+      if (!childExited(child)) child.kill('SIGKILL');
+    }
     await rm(directory, { force: true, recursive: true });
   });
   return { auditPath, client, spawns };
@@ -99,7 +105,11 @@ test('uses a fresh ephemeral read-only and no-network tutor thread for each answ
   }
   for (const request of turnStarts) {
     assert.equal(request.params.approvalPolicy, 'never');
-    assert.deepEqual(request.params.sandboxPolicy, { networkAccess: false, type: 'readOnly' });
+    assert.equal(request.params.cwd, client.workspace);
+    assert.deepEqual(request.params.sandboxPolicy, {
+      networkAccess: false,
+      type: 'readOnly',
+    });
   }
 });
 
@@ -109,14 +119,96 @@ test('fails a tutor request when App Server reports unsafe tool activity', async
 });
 
 test('rejects server-initiated host actions instead of forwarding them', async (testContext) => {
-  const { auditPath, client } = await createFixtureClient(testContext, {
+  const { client, spawns } = await createFixtureClient(testContext, {
     FAKE_APP_SERVER_HOST_REQUEST: '1',
   });
   await assert.rejects(() => client.ask('Request approval.'), UnsafeToolActivityError);
-  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(childExited(spawns[0].child), true);
+});
 
-  const audit = await readAudit(auditPath);
-  const denial = audit.find((message) => message.id === 901 && message.error);
-  assert.equal(denial.error.code, -32_601);
-  assert.doesNotMatch(JSON.stringify(denial), /Request approval/u);
+const childExited = (child) => child.exitCode !== null || child.signalCode !== null;
+
+test('terminates App Server when an unsafe item races the turn-start response', async (testContext) => {
+  const { client, spawns } = await createFixtureClient(testContext, {
+    FAKE_APP_SERVER_COALESCED_UNSAFE_TOOL: '1',
+  });
+  await assert.rejects(() => client.ask('Run a command.'), UnsafeToolActivityError);
+  assert.equal(childExited(spawns[0].child), true);
+});
+
+test('fails closed on an unrecognized App Server item type', async (testContext) => {
+  const { client, spawns } = await createFixtureClient(testContext, {
+    FAKE_APP_SERVER_UNKNOWN_ITEM: '1',
+  });
+  await assert.rejects(() => client.ask('Explain.'), UnsafeToolActivityError);
+  assert.equal(childExited(spawns[0].child), true);
+});
+
+test('bounds aggregate output across distinct App Server item ids', async (testContext) => {
+  const { client, spawns } = await createFixtureClient(testContext, {
+    FAKE_APP_SERVER_MANY_ITEMS: '1',
+  }, {
+    maximumResponseBytes: 8,
+    turnTimeoutMs: 200,
+  });
+  await assert.rejects(() => client.ask('Explain.'), /response limit/u);
+  assert.equal(childExited(spawns[0].child), true);
+});
+
+test('bounds distinct answer item ids even below the aggregate byte limit', async (testContext) => {
+  const { client, spawns } = await createFixtureClient(testContext, {
+    FAKE_APP_SERVER_MANY_ITEMS: '1',
+  }, {
+    maximumItemCount: 2,
+    maximumResponseBytes: 100,
+    turnTimeoutMs: 200,
+  });
+  await assert.rejects(() => client.ask('Explain.'), /item limit/u);
+  assert.equal(childExited(spawns[0].child), true);
+});
+
+test('bounds total turn events independently of item and byte limits', async (testContext) => {
+  const { client, spawns } = await createFixtureClient(testContext, {
+    FAKE_APP_SERVER_MANY_ITEMS: '1',
+  }, {
+    maximumItemCount: 10,
+    maximumResponseBytes: 100,
+    maximumTurnEvents: 2,
+    turnTimeoutMs: 200,
+  });
+  await assert.rejects(() => client.ask('Explain.'), /event limit/u);
+  assert.equal(childExited(spawns[0].child), true);
+});
+
+test('terminates App Server after fatal protocol output', async (testContext) => {
+  const { client, spawns } = await createFixtureClient(testContext, {
+    FAKE_APP_SERVER_MALFORMED_FRAME: '1',
+  });
+  await assert.rejects(() => client.ask('Explain.'), /protocol failed closed/u);
+  assert.equal(childExited(spawns[0].child), true);
+});
+
+test('terminates App Server before releasing a timed-out turn', async (testContext) => {
+  const { client, spawns } = await createFixtureClient(testContext, {
+    FAKE_APP_SERVER_STALLED_TURN: '1',
+  }, {
+    turnTimeoutMs: 100,
+  });
+  await assert.rejects(() => client.ask('Explain.'), /too long/u);
+  assert.equal(childExited(spawns[0].child), true);
+});
+
+test('bounds pending App Server requests independently of HTTP admission', async (testContext) => {
+  const { client } = await createFixtureClient(testContext, {
+    FAKE_APP_SERVER_STALLED_ACCOUNT: '1',
+  }, {
+    maximumPendingRequests: 2,
+  });
+  await client.start();
+  const first = client.readAccount().catch((error) => error);
+  const second = client.readAccount().catch((error) => error);
+  await new Promise((resolve) => setImmediate(resolve));
+  await assert.rejects(() => client.readAccount(), ConnectorBusyError);
+  await client.stop();
+  await Promise.all([first, second]);
 });

@@ -49,7 +49,8 @@ The learner controls installation, Codex login, pairing, status, stopping, repai
 - Pairing material is never placed in the npm command, logs, error messages, test snapshots, or Codex prompts. The later one-time pairing value is short-lived, single-use, and carried in a URL fragment.
 - The browser receives no Codex access token, refresh token, API key, or credential-store content.
 - App Server runs over stdio, behind an adapter, with an empty MCP configuration. Tutor turns use no approvals, a read-only sandbox, and disabled network access.
-- Prompt, request body, response, time, and concurrency limits fail closed.
+- Prompt, request body, response, frame, aggregate turn output, item/event count, pending App Server request, connection, time, and active HTTP-work limits fail closed.
+- Unsafe or unknown turn items, malformed protocol output, aggregate-limit violations, and turn timeouts require confirmed App Server termination before the connector accepts more work.
 - Server-initiated host actions are rejected rather than exposed to the browser.
 - Stop and uninstall act only on the process and paths proven to belong to this connector installation.
 - Version 0.1.0 remains Beta because the upstream App Server interface can change.
@@ -72,7 +73,9 @@ An attacker may try to obtain pairing material from shell history, query-string 
 
 Exercise content can contain instructions such as requests to run a command, inspect files, browse, reveal secrets, or ignore tutor rules. The connector must treat all exercise content as data, add fixed tutor instructions, start a fresh ephemeral interaction according to product behavior, configure no MCP servers, reject host-action requests, set approval policy to never, and enforce read-only/no-network execution. Prompt instructions are defense in depth; sandbox, tool, approval, and transport configuration are the security boundary.
 
-Relevant failure classes include prompt injection crossing into tool execution, accidentally inheriting user MCP configuration, writable sandboxes, network-enabled turns, approval forwarding, unbounded output, and cross-request response confusion. The App Server adapter must correlate response and turn identifiers, reject malformed frames safely, bound buffered data, and fail pending work when the child exits.
+Relevant failure classes include prompt injection crossing into tool execution, accidentally inheriting user MCP configuration, broad filesystem reads, writable sandboxes, network-enabled turns, approval forwarding, unbounded output, and cross-request response confusion. The App Server adapter must fix the working directory to its empty workspace, correlate response and turn identifiers, reject malformed frames safely, bound aggregate data and event counts, terminate on non-passive items or unsafe failures, and fail pending work when the child exits.
+
+The current official App Server contract documents sandbox and approval controls but no per-turn switch that removes all built-in tools. Its newer restricted-read field is also rejected by the currently tested installed Codex CLI. Process termination after an unsafe event is reactive, so a tool may begin and the read-only sandbox may permit reads outside the working directory before its event is observed. Public Beta publication remains blocked until compatible preventive upstream controls exist or the owner explicitly accepts this residual risk.
 
 ### Codex authentication and privacy
 
@@ -88,7 +91,7 @@ Malformed origins, ports, paths, PID files, and stale installation state are rea
 
 ### Availability and abuse
 
-A paired browser could send concurrent or slow requests, repeatedly restart Codex, or cause large buffered output. The bridge should enforce one or a small fixed number of active turns, hard request/turn/startup timeouts, request and response caps, and deterministic cleanup. Local denial of service is less severe than boundary bypass but still matters because it can strand the connector, consume the learner's allowance, or require manual repair.
+A paired browser could send concurrent or slow requests, repeatedly restart Codex, or cause large buffered output across many frames or item identifiers. The bridge enforces fixed connection and active-request limits before authentication work, one active tutor turn, a separate pending App Server request limit, hard request/turn/startup timeouts, aggregate response/item/event caps, and confirmed child termination for unsafe turns. Local denial of service is less severe than boundary bypass but still matters because it can strand the connector, consume the learner's allowance, or require manual repair.
 
 ## Severity Calibration (Critical, High, Medium, Low)
 

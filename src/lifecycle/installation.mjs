@@ -38,6 +38,7 @@ const PACKAGE_FILE_ENTRIES = [
   'LICENSE',
   'README.md',
   'SECURITY.md',
+  'SUPPORT.md',
   'package.json',
 ];
 

@@ -14,13 +14,17 @@
     "CHANGELOG.md",
     "LICENSE",
     "README.md",
-    "SECURITY.md"
+    "SECURITY.md",
+    "SUPPORT.md"
   ],
   "scripts": {
+    "check:secrets": "node ./scripts/repository-checks.mjs secrets",
+    "lint": "node ./scripts/repository-checks.mjs source",
     "start": "node ./bin/bookarium-codex-connector.mjs serve",
     "test": "node --test",
     "test:coverage": "node --test --experimental-test-coverage",
-    "pack:check": "npm pack --dry-run"
+    "pack:check": "npm pack --dry-run --json | node ./scripts/repository-checks.mjs pack",
+    "smoke:packed": "node --test test/smoke/packed-tarball-windows.test.mjs"
   },
   "engines": {
     "node": ">=20.18.1"
