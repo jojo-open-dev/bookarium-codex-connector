@@ -1,0 +1,41 @@
+{
+  "name": "@bookarium/codex-connector",
+  "version": "0.1.0",
+  "description": "Local, loopback-only Bookarium bridge for a ChatGPT-authenticated Codex CLI",
+  "type": "module",
+  "bin": {
+    "bookarium-codex-connector": "bin/bookarium-codex-connector.mjs"
+  },
+  "exports": "./src/index.mjs",
+  "files": [
+    "bin/",
+    "src/",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "SECURITY.md"
+  ],
+  "scripts": {
+    "start": "node ./bin/bookarium-codex-connector.mjs serve",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage",
+    "pack:check": "npm pack --dry-run"
+  },
+  "engines": {
+    "node": ">=20.18.1"
+  },
+  "keywords": [
+    "bookarium",
+    "codex",
+    "education"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jojobeee/bookarium-codex-connector.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
