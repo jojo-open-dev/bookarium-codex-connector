@@ -110,4 +110,4 @@ The connector runs locally and asks the locally authenticated Codex CLI to send 
 
 A study request contains the prompt prepared by Bookarium, which can include the current book/chapter, exercise title and type, and a bounded representation of the current exercise item. Full prompts, authorization headers, pairing tokens, and Codex credentials are excluded from normal logs.
 
-See [SECURITY.md](SECURITY.md), [PROJECT_HANDOFF.md](PROJECT_HANDOFF.md), and [THREAT_MODEL.md](THREAT_MODEL.md).
+See [SECURITY.md](SECURITY.md) and [THREAT_MODEL.md](THREAT_MODEL.md).
