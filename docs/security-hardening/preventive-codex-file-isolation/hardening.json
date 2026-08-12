@@ -1,0 +1,485 @@
+{
+  "documentType": "codex-security.hardening-analysis",
+  "schemaVersion": "1.0",
+  "analysisId": "hardening_20260812_preventive_codex_file_isolation",
+  "sourceScan": {
+    "scanId": "7b58f511-4efb-46ad-9b7c-f990c4a3545f",
+    "manifestSha256": "df63a81972bb3def12fd8ce5ef36064baa2db631d9046abad4f418cf3f783b01",
+    "targetRevision": "6581f32e39f61f907c9a723d172b2ccd5545a9f8",
+    "snapshotDigest": "codex-security-snapshot/v1:sha256:9a5e1ff7f448fb19feef0376d2fd994a987e225ff871fe2b3fe779510bdbbe2e",
+    "sourceDrift": "present"
+  },
+  "assessment": {
+    "outcome": "opportunities_identified",
+    "summary": "A preventive file-read boundary is required before public release; the preferred restricted-root design is documented upstream but is not present in the current stable or alpha Windows App Server schemas."
+  },
+  "constraints": {
+    "profile": "security_first_non_technical_windows",
+    "changeHorizons": [
+      "incremental",
+      "medium_term",
+      "foundational"
+    ],
+    "nonNegotiables": [
+      "Bind only to 127.0.0.1 and retain exact-origin plus pairing authorization.",
+      "Never read, parse, copy, log, or transmit Codex authentication material.",
+      "Retain no approvals, no MCP servers, no tool network, no writes, and fail-closed lifecycle behavior.",
+      "Preserve a one-time install and simple current-user activation flow without administrator rights where practical.",
+      "Do not publish while the high-severity preventive isolation finding remains unresolved unless the owner explicitly accepts the residual risk."
+    ],
+    "assumptions": [
+      "The official Codex binary and OpenAI service remain trusted dependencies.",
+      "No measured latency or memory budget was supplied.",
+      "The stable 0.147.0 and alpha 0.148.0-alpha.9 schemas generated on 2026-08-12 accurately represent those released App Server contracts.",
+      "A browser context at the paired Bookarium origin and all study content remain untrusted."
+    ]
+  },
+  "opportunities": [
+    {
+      "opportunityId": "preventive-file-read-isolation",
+      "title": "Deny unrelated file reads before built-in tool activity",
+      "summary": "Move enforcement from post-start tool notifications to a preventive restricted-read boundary, an outer OS isolation boundary, or removal of the tutor-turn entry point.",
+      "diagnosis": "The connector owns a no-file policy but the released App Server contract gives it only broad read-only execution; the adapter learns about unsafe built-in activity after a read may already have occurred.",
+      "evidence": [
+        {
+          "claimType": "observed",
+          "sourceKind": "finding",
+          "findingId": "csf_14395776f874dfb1031885b2",
+          "path": "src/app-server/client.mjs",
+          "claim": "The sealed scan validated that built-in activity is rejected only after an item event can report it."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "source",
+          "path": "src/app-server/client.mjs",
+          "claim": "Current source fixes an empty workspace, clears MCP configuration, uses no approvals and a read-only/no-network policy, rejects host actions, and terminates on every non-passive item."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "document",
+          "evidenceId": "D1-official-app-server-read-access",
+          "claim": "Current official App Server documentation describes restricted read roots and externalSandbox but does not document a built-in-tool denial field."
+        },
+        {
+          "claimType": "observed",
+          "sourceKind": "experiment",
+          "evidenceId": "X1-released-turn-start-schemas",
+          "claim": "Generated TurnStartParams schemas from stable 0.147.0 and alpha 0.148.0-alpha.9 contain neither restricted read roots nor a built-in-tool denial field."
+        },
+        {
+          "claimType": "inferred",
+          "sourceKind": "source",
+          "path": "src/app-server/client.mjs",
+          "claim": "Prompt rules and event-time termination cannot prevent file content from entering a turn if an allowed built-in read occurs before notification."
+        }
+      ],
+      "desiredInvariants": [
+        "Browser-controlled study text cannot cause a process to read outside the empty connector-owned workspace.",
+        "The denial is enforced before the first read rather than after a protocol notification.",
+        "Unsupported or ignored isolation configuration fails closed without broad-read fallback.",
+        "Codex remains the sole owner and reader of its authentication state.",
+        "Reactive unsafe-item termination remains as defense in depth."
+      ],
+      "proposalPath": "proposals/preventive-file-read-isolation.md",
+      "options": [
+        {
+          "optionId": "publication-gate",
+          "title": "Keep the publication gate",
+          "kind": "baseline",
+          "summary": "Retain the current runtime and block public distribution while a preventive control is unavailable.",
+          "diagramPaths": {
+            "before": "diagrams/preventive-file-read-isolation-before.mmd",
+            "after": "diagrams/preventive-file-read-isolation-publication-gate-after.mmd"
+          },
+          "findingCoverage": [
+            {
+              "findingId": "csf_14395776f874dfb1031885b2",
+              "effect": "mitigates",
+              "tacticalFixRequired": true,
+              "rationale": "Blocking publication limits affected users but does not change the local browser-to-file attack path."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "improves",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Public exposure does not expand, although deliberately run local copies retain the finding.",
+              "validationPlan": "Verify package, tag, release, and registry state remain unpublished and keep the release checklist gate."
+            },
+            {
+              "dimension": "performance",
+              "direction": "neutral",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "No runtime path changes.",
+              "validationPlan": "No benchmark is required unless current runtime controls change."
+            },
+            {
+              "dimension": "memory",
+              "direction": "neutral",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "No process or retained state is added.",
+              "validationPlan": "No memory benchmark is required unless current runtime controls change."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "neutral",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Existing local behavior is preserved.",
+              "validationPlan": "Continue the existing unit, integration, and opt-in smoke suites."
+            },
+            {
+              "dimension": "operability",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Maintainers must continuously track the blocker and prevent accidental publication.",
+              "validationPlan": "Audit release workflow permissions and require the documented owner approval gate."
+            },
+            {
+              "dimension": "migration",
+              "direction": "neutral",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "No user or protocol migration occurs while the package remains unpublished.",
+              "validationPlan": "Confirm no published consumers require compatibility handling."
+            }
+          ],
+          "residualRisks": [
+            "Developers and testers who run the connector remain exposed to the local finding.",
+            "A mistaken publication or explicit risk acceptance would expose the unchanged path."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": [
+              "SECURITY.md",
+              "THREAT_MODEL.md",
+              "docs/release-process.md"
+            ],
+            "workPackages": [
+              "Keep the current release blocker explicit and verify registry/release state."
+            ],
+            "acceptanceCriteria": [
+              "No public package, tag, or release is produced while the finding is unresolved."
+            ],
+            "migrationNotes": [],
+            "rollback": "Not applicable; this is the current interim state."
+          }
+        },
+        {
+          "optionId": "version-gated-restricted-roots",
+          "title": "Require verified restricted roots",
+          "kind": "incremental",
+          "summary": "Allow tutor turns only with a released Windows Codex App Server that accepts and enforces restricted readable roots.",
+          "diagramPaths": {
+            "before": "diagrams/preventive-file-read-isolation-before.mmd",
+            "after": "diagrams/preventive-file-read-isolation-version-gated-restricted-roots-after.mmd"
+          },
+          "findingCoverage": [
+            {
+              "findingId": "csf_14395776f874dfb1031885b2",
+              "effect": "addresses",
+              "tacticalFixRequired": false,
+              "rationale": "An enforced outside-root read denial prevents arbitrary user files from entering the turn even if a built-in tool starts."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "improves",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "The documented policy is at the correct pre-read boundary, but released Windows enforcement is not yet available or validated.",
+              "validationPlan": "Require a stable schema plus hostile outside-root canary tests across every supported Windows configuration."
+            },
+            {
+              "dimension": "performance",
+              "direction": "regresses",
+              "confidence": "low",
+              "basis": "hypothetical",
+              "assessment": "Policy parsing and filesystem access checks may add small turn startup or read latency without adding a process hop.",
+              "validationPlan": "Compare 50 cold and 200 warm starts; review if p95 increases by more than 250 ms."
+            },
+            {
+              "dimension": "memory",
+              "direction": "neutral",
+              "confidence": "low",
+              "basis": "hypothetical",
+              "assessment": "Only a bounded policy and OS sandbox metadata are expected to be added.",
+              "validationPlan": "Compare steady-state and peak working set; review if the candidate adds more than 25 MiB."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Unsupported versions or insufficient platform roots will make explanations fail closed.",
+              "validationPlan": "Exercise supported, unsupported, malformed, upgrade, downgrade, repair, and restart cases on clean Windows images."
+            },
+            {
+              "dimension": "operability",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "The project must maintain an exact compatibility gate and real Windows security canaries as Codex evolves.",
+              "validationPlan": "Add release-candidate evidence for schema identity, candidate binary version, and canary outcomes."
+            },
+            {
+              "dimension": "migration",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Older installed Codex versions must upgrade before explanations are available.",
+              "validationPlan": "Test nontechnical upgrade messaging and prove there is no broad-read fallback."
+            }
+          ],
+          "residualRisks": [
+            "Built-in tools may still start and consume local resources before reactive termination.",
+            "Files intentionally or accidentally placed inside an allowed root remain readable.",
+            "Undocumented Windows platform-default roots could make the boundary broader than intended."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": [
+              "src/app-server/client.mjs",
+              "src/lifecycle/prerequisites.mjs",
+              "src/commands/lifecycle.mjs",
+              "fixtures/fake-app-server.mjs",
+              "test/unit/app-server-client.test.mjs",
+              "test/unit/prerequisites.test.mjs",
+              "test/smoke/real-codex-windows.test.mjs",
+              "SECURITY.md",
+              "THREAT_MODEL.md"
+            ],
+            "workPackages": [
+              "Define a reviewed stable Codex compatibility contract and fail-closed prerequisite check.",
+              "Send restricted read access on every tutor turn without fallback.",
+              "Add fake-contract regressions and real Windows inside/outside-root canaries.",
+              "Update release and nontechnical support documentation."
+            ],
+            "acceptanceCriteria": [
+              "A stable released Windows schema exposes the restricted-read field.",
+              "An outside-root synthetic marker cannot be read or appear in any protocol frame, answer, or log.",
+              "Unsupported or rejecting Codex versions never start a tutor turn.",
+              "Existing no-write, no-network, no-approval, no-MCP, event-limit, and confirmed-termination tests remain green."
+            ],
+            "migrationNotes": [
+              "Keep publication blocked until clean-VM and packed-artifact verification passes.",
+              "Older Codex versions receive an actionable upgrade message without security fallback."
+            ],
+            "rollback": "Disable the explanation operation and restore the publication gate; never omit the restricted policy while continuing tutor turns."
+          }
+        },
+        {
+          "optionId": "os-sandbox-broker",
+          "title": "Add an external OS sandbox broker",
+          "kind": "isolation",
+          "summary": "Launch Codex through a native AppContainer or equivalent Windows boundary with explicit resource grants.",
+          "diagramPaths": {
+            "before": "diagrams/preventive-file-read-isolation-before.mmd",
+            "after": "diagrams/preventive-file-read-isolation-os-sandbox-broker-after.mmd"
+          },
+          "findingCoverage": [
+            {
+              "findingId": "csf_14395776f874dfb1031885b2",
+              "effect": "addresses",
+              "tacticalFixRequired": false,
+              "rationale": "A correctly configured OS process boundary would deny unrelated file access independently of built-in-tool notifications."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "improves",
+              "confidence": "medium",
+              "basis": "analogous",
+              "assessment": "AppContainer is a documented Windows security boundary, but the necessary Codex resource and authentication grants have not been designed or tested.",
+              "validationPlan": "Prototype with synthetic credentials and hostile file/process/network tests before touching a real Codex profile."
+            },
+            {
+              "dimension": "performance",
+              "direction": "regresses",
+              "confidence": "low",
+              "basis": "hypothetical",
+              "assessment": "A broker, IPC, capability setup, and isolated process launch can add startup latency.",
+              "validationPlan": "Measure the same cold/warm workload as the baseline and profile broker launch plus IPC separately."
+            },
+            {
+              "dimension": "memory",
+              "direction": "regresses",
+              "confidence": "low",
+              "basis": "hypothetical",
+              "assessment": "A resident broker or additional process metadata increases working set.",
+              "validationPlan": "Measure per-process and total peak working set during idle, startup, and active turns."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "analogous",
+              "assessment": "Packaging, capability, IPC, Codex update, and split-lifecycle failures add new unavailable states.",
+              "validationPlan": "Fault-inject broker crash, App Server crash, update mismatch, denied runtime dependency, and interrupted uninstall."
+            },
+            {
+              "dimension": "operability",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "The project gains native builds, signing, architecture variants, OS compatibility, observability, and incident-response ownership.",
+              "validationPlan": "Produce a support matrix and rehearse install, update, rollback, and diagnostic flows on supported Windows editions."
+            },
+            {
+              "dimension": "migration",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "The current pure Node/npm lifecycle would require a foundational packaging and process-launch migration.",
+              "validationPlan": "Prototype the complete install-once and activation flow before accepting the architecture."
+            }
+          ],
+          "residualRisks": [
+            "An overbroad capability or authentication grant can recreate the file-read exposure.",
+            "The broker becomes a new trusted native component and supply-chain target.",
+            "Windows Home, architecture, and Codex credential-store compatibility may prevent the intended user experience."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": [
+              "Native Windows broker to be designed",
+              "src/app-server/client.mjs",
+              "src/lifecycle/subprocess.mjs",
+              "src/lifecycle/installation.mjs",
+              "src/commands/lifecycle.mjs",
+              "package.json",
+              "Release workflows and signing configuration"
+            ],
+            "workPackages": [
+              "Run a disposable AppContainer/restricted-token feasibility prototype with synthetic data.",
+              "Design exact filesystem, authentication, runtime, network, and child-process capabilities.",
+              "Design signed multi-architecture packaging, IPC, lifecycle ownership, and diagnostics.",
+              "Build a Windows edition/version validation matrix before product integration."
+            ],
+            "acceptanceCriteria": [
+              "The broker prevents outside-root reads, writes, unintended network, process escape, and host interaction before activity begins.",
+              "Codex authentication remains owned by the official CLI and is neither copied nor parsed by the connector.",
+              "The user flow remains supportable without administrator rights on the declared Windows matrix.",
+              "Broker and App Server process trees terminate and recover deterministically."
+            ],
+            "migrationNotes": [
+              "Reject the option if the prototype requires copying credentials or silently excludes the supported consumer Windows editions.",
+              "Keep the publication gate throughout the prototype and staged rollout."
+            ],
+            "rollback": "Remove the broker-enabled explanation path and return to the publication gate or disabled-explanation state."
+          }
+        },
+        {
+          "optionId": "disable-explanations",
+          "title": "Disable explanations",
+          "kind": "structural",
+          "summary": "Remove the browser-to-tutor-turn operation while retaining only safe lifecycle, pairing, and account metadata behavior if useful.",
+          "diagramPaths": {
+            "before": "diagrams/preventive-file-read-isolation-before.mmd",
+            "after": "diagrams/preventive-file-read-isolation-disable-explanations-after.mmd"
+          },
+          "findingCoverage": [
+            {
+              "findingId": "csf_14395776f874dfb1031885b2",
+              "effect": "addresses",
+              "tacticalFixRequired": false,
+              "rationale": "No browser-controlled study text reaches a Codex turn, so the finding's entry point is removed."
+            }
+          ],
+          "tradeoffs": [
+            {
+              "dimension": "security",
+              "direction": "improves",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Removing /v1/ask eliminates the browser-prompt-to-built-in-tool dataflow.",
+              "validationPlan": "Verify no HTTP route, browser flow, or internal caller can create a tutor turn."
+            },
+            {
+              "dimension": "performance",
+              "direction": "improves",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Tutor-turn startup and generation latency disappear.",
+              "validationPlan": "Confirm remaining account and lifecycle endpoints meet current response budgets."
+            },
+            {
+              "dimension": "memory",
+              "direction": "improves",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "No active turn buffers or tool processes are needed for browser use.",
+              "validationPlan": "Compare idle/account-only working set with the current active-turn baseline."
+            },
+            {
+              "dimension": "reliability",
+              "direction": "improves",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "The longest and most failure-prone browser operation is removed.",
+              "validationPlan": "Run route and lifecycle suites and verify a deterministic unavailable response."
+            },
+            {
+              "dimension": "operability",
+              "direction": "regresses",
+              "confidence": "medium",
+              "basis": "source-derived",
+              "assessment": "Technical operation becomes simpler, but support and product messaging become harder because the connector loses its main function.",
+              "validationPlan": "User-test the frontend and installation copy with nontechnical learners before any public release."
+            },
+            {
+              "dimension": "migration",
+              "direction": "regresses",
+              "confidence": "high",
+              "basis": "source-derived",
+              "assessment": "Frontend behavior and user expectations must change, even though the backend edit is small.",
+              "validationPlan": "Coordinate connector and frontend releases and verify old clients receive a safe fixed response."
+            }
+          ],
+          "residualRisks": [
+            "Pairing, account metadata, installation, and lifecycle surfaces remain, although they do not carry the tutor file-read path.",
+            "A later accidental re-enable without a preventive boundary would recreate the finding."
+          ],
+          "implementationReadiness": {
+            "affectedComponents": [
+              "src/bridge/http-server.mjs",
+              "src/runtime/managed-service.mjs",
+              "test/integration/http-server.test.mjs",
+              "README.md",
+              "SECURITY.md",
+              "Bookarium frontend explanation flow"
+            ],
+            "workPackages": [
+              "Remove or hard-disable the explanation route and internal turn call.",
+              "Return a fixed non-sensitive compatibility response for older frontend clients if needed.",
+              "Update frontend and nontechnical documentation in the same release.",
+              "Add a release test proving browser input cannot create a tutor turn."
+            ],
+            "acceptanceCriteria": [
+              "No browser-accessible operation can call CodexAppServerClient.ask.",
+              "Existing clients receive deterministic behavior without sensitive details.",
+              "Re-enabling explanations requires a separate reviewed security gate."
+            ],
+            "migrationNotes": [
+              "Consider keeping the entire connector unpublished if account metadata alone has insufficient user value."
+            ],
+            "rollback": "Re-enable explanations only after another preventive option has passed all acceptance criteria."
+          }
+        }
+      ],
+      "recommendedOptionId": "version-gated-restricted-roots",
+      "recommendation": "Keep the publication gate now, then adopt restricted roots only after a stable Windows Codex contract and hostile-read canaries prove enforcement; choose disabled explanations if release timing cannot wait."
+    }
+  ],
+  "openQuestions": [
+    "Which stable Codex version first exposes restricted read access in its generated Windows App Server schema?",
+    "What exact Windows roots are added by platform defaults, and do any include user content?",
+    "Does restricted read enforcement cover every built-in subprocess and direct file API?",
+    "Can capability support be checked without starting a real tutor turn or reading authentication content?",
+    "If upstream support is delayed, does the product value justify a native AppContainer broker?"
+  ]
+}

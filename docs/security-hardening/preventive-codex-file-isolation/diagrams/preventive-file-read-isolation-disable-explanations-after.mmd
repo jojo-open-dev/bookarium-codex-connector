@@ -1,0 +1,9 @@
+flowchart LR
+    B[Paired Bookarium browser]
+    H[Loopback HTTP bridge]
+    D[Explanation disabled<br/>fixed unavailable response]
+    A[Codex account metadata path]
+    T[No tutor turn created]
+
+    B -->|POST /v1/ask| H --> D --> T
+    B -->|GET /v1/account| H --> A

@@ -1,0 +1,20 @@
+flowchart LR
+    B[Paired Bookarium browser<br/>untrusted study text]
+    C[Connector adapter]
+    R[Native isolation broker<br/>fail-closed launch]
+    A[Codex App Server]
+    T[Built-in tool process]
+    W[(Explicitly granted workspace/runtime)]
+    F[(Other user files)]
+
+    B --> C --> R
+    R -->|isolated process token/container| A
+    A --> T
+    T -->|allowed| W
+    T -. OS access denied .-> F
+
+    subgraph OSBoundary[AppContainer or equivalent OS boundary]
+        A
+        T
+        W
+    end

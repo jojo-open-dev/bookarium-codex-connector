@@ -1,0 +1,24 @@
+flowchart LR
+    B[Paired Bookarium browser<br/>untrusted study text]
+    H[Loopback HTTP bridge<br/>origin + bearer checks]
+    C[Connector App Server adapter<br/>fixed tutor policy]
+    A[Codex App Server<br/>same Windows user]
+    T[Built-in tool process<br/>read-only, no network]
+    F[(Other user-readable files)]
+    E[Tool event observed<br/>connector terminates child]
+
+    B -->|POST /v1/ask| H
+    H -->|bounded prompt| C
+    C -->|turn/start| A
+    A -->|tool may begin first| T
+    T -->|read can occur| F
+    A -. notification after start .-> E
+    E -. reactive stop .-> A
+
+    subgraph SameUser[Current-user trust boundary]
+        C
+        A
+        T
+        F
+        E
+    end
