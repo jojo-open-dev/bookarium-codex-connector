@@ -23,6 +23,7 @@ All notable changes to this project will be documented here.
 
 ### Changed
 
+- Pin tutor requests to `gpt-5.6-luna` with `medium` reasoning and remove the unsupported personality override.
 - Make on-demand Windows activation the default and automatic sign-in startup an explicit `install --startup` option.
 - Persist a verified shell-free Codex launch command during install and repair so later CLI and URI starts do not depend on the caller's `PATH`.
 - Open the one-time pairing page through Windows' URL handler instead of `explorer.exe`, which could leave pairing pending without navigating the default browser.

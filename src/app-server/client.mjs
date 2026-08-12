@@ -15,6 +15,8 @@ import {
   MAX_RESPONSE_BYTES,
   PACKAGE_VERSION,
   STUDY_ASSISTANT_INSTRUCTIONS,
+  STUDY_ASSISTANT_MODEL,
+  STUDY_ASSISTANT_REASONING_EFFORT,
 } from '../constants.mjs';
 import {
   AppServerProtocolError,
@@ -218,7 +220,7 @@ export class CodexAppServerClient {
         cwd: this.workspace,
         developerInstructions: STUDY_ASSISTANT_INSTRUCTIONS,
         ephemeral: true,
-        personality: 'friendly',
+        model: STUDY_ASSISTANT_MODEL,
         sandbox: 'read-only',
         serviceName: APP_SERVER_CLIENT_NAME,
       });
@@ -253,15 +255,15 @@ export class CodexAppServerClient {
 
       try {
         const turnResult = await this.request('turn/start', {
-        approvalPolicy: 'never',
-        cwd: this.workspace,
-        effort: 'low',
-        input: [{ type: 'text', text: normalizedPrompt }],
-        personality: 'friendly',
-        sandboxPolicy: {
-          networkAccess: false,
-          type: 'readOnly',
-        },
+          approvalPolicy: 'never',
+          cwd: this.workspace,
+          effort: STUDY_ASSISTANT_REASONING_EFFORT,
+          input: [{ type: 'text', text: normalizedPrompt }],
+          model: STUDY_ASSISTANT_MODEL,
+          sandboxPolicy: {
+            networkAccess: false,
+            type: 'readOnly',
+          },
           threadId,
         });
         const turnId = turnResult?.turn?.id;

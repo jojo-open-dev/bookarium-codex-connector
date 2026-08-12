@@ -10,7 +10,11 @@ import {
   ConnectorBusyError,
   UnsafeToolActivityError,
 } from '../../src/app-server/client.mjs';
-import { STUDY_ASSISTANT_INSTRUCTIONS } from '../../src/constants.mjs';
+import {
+  STUDY_ASSISTANT_INSTRUCTIONS,
+  STUDY_ASSISTANT_MODEL,
+  STUDY_ASSISTANT_REASONING_EFFORT,
+} from '../../src/constants.mjs';
 
 const fixturePath = fileURLToPath(new URL('../../fixtures/fake-app-server.mjs', import.meta.url));
 
@@ -107,10 +111,15 @@ test('uses a fresh ephemeral read-only and no-network tutor thread for each answ
     assert.equal(request.params.ephemeral, true);
     assert.equal(request.params.baseInstructions, STUDY_ASSISTANT_INSTRUCTIONS);
     assert.equal(request.params.developerInstructions, STUDY_ASSISTANT_INSTRUCTIONS);
+    assert.equal(request.params.model, STUDY_ASSISTANT_MODEL);
+    assert.equal(Object.hasOwn(request.params, 'personality'), false);
   }
   for (const request of turnStarts) {
     assert.equal(request.params.approvalPolicy, 'never');
     assert.equal(request.params.cwd, client.workspace);
+    assert.equal(request.params.effort, STUDY_ASSISTANT_REASONING_EFFORT);
+    assert.equal(request.params.model, STUDY_ASSISTANT_MODEL);
+    assert.equal(Object.hasOwn(request.params, 'personality'), false);
     assert.deepEqual(request.params.sandboxPolicy, {
       networkAccess: false,
       type: 'readOnly',
