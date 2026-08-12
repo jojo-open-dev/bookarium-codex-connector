@@ -19,11 +19,17 @@ On Windows 10/11, lifecycle and pairing commands operate below the current user'
 
 `install` starts the connector and opens the exact configured Bookarium origin with 256 bits of one-time pairing material in the URL fragment. The request expires after five minutes and is consumed atomically. A successful `pair` operation replaces the prior browser token; `revoke` immediately removes browser authorization. The connector persists only SHA-256 token verifiers, not either plaintext pairing value.
 
-On later visits, Bookarium first probes the connector. If it is stopped, a direct user click on **Connect Codex** opens `bookarium-codex://connect`; Windows launches the registered connector, and Bookarium polls `/readyz` before reusing the saved browser token. A normal webpage never executes Node.js or a shell command directly. The connector remains running after activation until it is stopped or the user session ends.
+On later visits, the user activates the installed connector from PowerShell and then opens Bookarium:
+
+```powershell
+Start-Process 'bookarium-codex://connect'
+```
+
+Windows launches the fixed registered connector command, and Bookarium reuses the saved browser token. The website's **Connect Codex** button can invoke the same activation as a recovery option, but it is not required for the normal PowerShell-first flow. A normal webpage never executes Node.js or a shell command directly. The connector remains running after activation until it is stopped or the user session ends.
 
 Read-only Linux/Windows CI and a manual local-release-candidate workflow verify source hygiene, immutable action pins, tests, dependency audit, the exact npm file allowlist, and the packed archive. They contain no publication step or write-capable token. See [the release process](docs/release-process.md).
 
-The matching Bookarium frontend fragment handling exists on its separate approved branch; button-driven activation and bounded readiness polling remain to be added there. A clean Windows VM end-to-end test and resolution or explicit owner acceptance of the documented App Server tool-isolation limitation are also required. Until those gates are complete, the package is not ready for learner installation or publication.
+The matching Bookarium frontend fragment handling, activation fallback, and bounded readiness polling exist on its separate approved branch. A clean Windows VM end-to-end test and resolution or explicit owner acceptance of the documented App Server tool-isolation limitation are still required. Until those gates are complete, the package is not ready for learner installation or publication.
 
 ## Pairing protocol
 
@@ -43,7 +49,15 @@ The Windows installer registers this fixed URI:
 bookarium-codex://connect
 ```
 
-The Bookarium frontend may open it only from an explicit user action. It must then poll `GET http://127.0.0.1:47321/readyz` for up to 30 seconds and, after protocol version 1 becomes ready, call `/v1/account` with the browser's existing bearer token. Activation carries no parameters and does not authorize the caller. If readiness never appears, the UI should offer install/repair guidance; if `/v1/account` rejects the saved token, the UI should offer the existing pairing flow.
+The normal returning-user sequence is:
+
+```powershell
+Start-Process 'bookarium-codex://connect'
+```
+
+Then open Bookarium in the browser. Installation and browser pairing are not repeated.
+
+As a fallback, the Bookarium frontend may open the URI only from an explicit user action. It must then poll `GET http://127.0.0.1:47321/readyz` for up to 30 seconds and, after protocol version 1 becomes ready, call `/v1/account` with the browser's existing bearer token. Activation carries no parameters and does not authorize the caller. If readiness never appears, the UI should offer install/repair guidance; if `/v1/account` rejects the saved token, the UI should offer the existing pairing flow.
 
 ## Development
 
@@ -69,6 +83,12 @@ bookarium-codex-connector uninstall
 ```
 
 `install` registers on-demand activation but does not enable automatic Windows sign-in startup by default. Use `install --startup` only when the user explicitly prefers automatic background startup. The legacy `--no-startup` option remains accepted and is equivalent to the default.
+
+After the one-time installation and pairing, start the connector for a study session and then visit Bookarium:
+
+```powershell
+Start-Process 'bookarium-codex://connect'
+```
 
 Use `pair` to connect a new browser or rotate browser authorization without reinstalling. Existing access remains valid while the five-minute request is pending and stops after the replacement succeeds. Use `revoke` to invalidate browser access immediately. `status` reports paired/unpaired and pending state without displaying secrets.
 

@@ -30,9 +30,25 @@ test('opens the pairing URL on Windows without a shell', async () => {
     return child;
   };
   const url = createPairingUrl('https://bienemaja.app', 'B'.repeat(43));
-  await openBrowser(url, { platform: 'win32', spawnProcess });
-  assert.equal(calls[0][0], 'explorer.exe');
-  assert.deepEqual(calls[0][1], [url]);
+  await openBrowser(url, {
+    environment: { SystemRoot: 'C:\\Windows' },
+    platform: 'win32',
+    spawnProcess,
+  });
+  assert.equal(calls[0][0], 'C:\\Windows\\System32\\rundll32.exe');
+  assert.deepEqual(calls[0][1], ['url.dll,FileProtocolHandler', url]);
   assert.equal(calls[0][2].shell, false);
   assert.equal(unrefCalled, true);
+});
+
+test('fails closed when the absolute Windows system directory is unavailable', () => {
+  const url = createPairingUrl('https://bienemaja.app', 'C'.repeat(43));
+  assert.throws(
+    () => openBrowser(url, { environment: {}, platform: 'win32' }),
+    /Windows system directory is unavailable/u,
+  );
+  assert.throws(
+    () => openBrowser(url, { environment: { SystemRoot: 'relative' }, platform: 'win32' }),
+    /Windows system directory is unavailable/u,
+  );
 });

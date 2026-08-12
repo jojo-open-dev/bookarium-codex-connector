@@ -120,6 +120,7 @@ export const installCommand = async (args, {
   line(output, `Codex: ${prerequisites.codexVersion}`);
   line(output, running.alreadyRunning ? 'Connector was already running.' : 'Connector started.');
   line(output, 'Bookarium was opened to finish private browser pairing.');
+  line(output, "Next time: Start-Process 'bookarium-codex://connect', then open Bookarium.");
   return 0;
 };
 

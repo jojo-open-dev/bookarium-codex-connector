@@ -4,7 +4,13 @@ Status: revised for on-demand use on Windows 10/11.
 
 ## Primary decision
 
-The connector registers the custom `bookarium-codex://connect` URI scheme below the current user's `HKCU\Software\Classes` registry boundary. A direct user click in Bookarium invokes the scheme, Windows launches the installed connector, and the page waits for loopback readiness before reusing its previously paired bearer token.
+The connector registers the custom `bookarium-codex://connect` URI scheme below the current user's `HKCU\Software\Classes` registry boundary. After the one-time installation and browser pairing, the normal returning-user flow is to run this in PowerShell and then open Bookarium:
+
+```powershell
+Start-Process 'bookarium-codex://connect'
+```
+
+Windows launches the installed connector, and the page reuses its previously paired bearer token. A direct user click in Bookarium may invoke the same scheme as a recovery path.
 
 Microsoft documents protocol activation as the Windows mechanism through which another application, including a browser, launches a registered desktop application. Registrations for unpackaged applications can be per-user and persistent. See [App activation for Windows desktop apps](https://learn.microsoft.com/en-us/windows/apps/develop/launch/activate-an-app) and [Handle URI activation](https://learn.microsoft.com/en-us/windows/apps/develop/launch/handle-uri-activation-dotnet).
 
